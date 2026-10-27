@@ -33,7 +33,7 @@ The exceptions are the Galaxy gestures and the volume knob, which changes the Ma
 | Thumbs up | Fist, thumb up, held | Approve the pending Galaxy approval |
 | Thumbs down | Fist, thumb down, held | Reject it |
 | Peace sign | Index and middle up in a V, palm to the screen, held | Summon Nova (the same as ⌃Space) |
-| Finger to lips | Index finger up, held against the lips ½s | Mute Orbit until unmuted (`orbit mute`) |
+| Finger to lips | Index finger up, held against the lips | Mute Orbit until unmuted (`orbit mute`) |
 | Hand to ear | Cupped hand behind the ear, held | Unmute Orbit (`orbit unmute`) |
 | Swipe left/right | Open flat hand moved quickly sideways, about shoulder width | Previous/next in the frontmost window: browser tabs, Keynote slides, Preview pages, Spotify/Music tracks |
 | Scroll | Index and middle together and up (like two fingers on a trackpad), palm to the screen, hand moved up/down; curl the fingers or drop the hand to stop | Scroll the frontmost window, trackpad-style, speed following the hand |
