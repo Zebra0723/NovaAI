@@ -36,6 +36,27 @@ final class NovaPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// Nova has no Edit menu (it's menu-bar only), so ⌘V and friends are routed here by hand.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.type == .keyDown, flags == .command || flags == [.command, .shift] {
+            let shift = flags.contains(.shift)
+            var action: Selector?
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "v": action = #selector(NSText.paste(_:))
+            case "c": action = #selector(NSText.copy(_:))
+            case "x": action = #selector(NSText.cut(_:))
+            case "a": action = #selector(NSText.selectAll(_:))
+            case "z": action = shift ? Selector(("redo:")) : Selector(("undo:"))
+            default: break
+            }
+            if let action, NSApp.sendAction(action, to: nil, from: self) {
+                return true
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     /// Shows the panel. `acting` docks it as a small pill at the top of the screen that
     /// clicks pass through; `interactive` makes it key so the user can type.
     func present(acting: Bool, interactive: Bool) {
