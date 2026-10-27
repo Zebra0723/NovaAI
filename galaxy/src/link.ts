@@ -7,7 +7,7 @@
 
 import { spawn } from "node:child_process";
 import { PresenceReader } from "./presence";
-import { Store, type Body, type BodyID, type InboxItem, type Task } from "./store";
+import { Store, type Body, type BodyID, type ChatMessage, type InboxItem, type Task } from "./store";
 
 /** How a body reaches you. Link uses this to deliver results, never to start a conversation. */
 export type Surface = "phone" | "screen" | "voice" | "none";
@@ -18,6 +18,8 @@ export interface BodyProfile {
   surface: Surface;
   /** Started by Link when work is queued for it and it isn't running. "" = never. */
   launch: string;
+  /** Its first words in Galaxy Chat, unless it brings its own. */
+  intro: string;
 }
 
 /**
@@ -32,17 +34,40 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     powers: ["imessage", "reach_phone", "build_web", "cad", "code", "research", "files"],
     surface: "phone",
     launch: "",
+    intro:
+      "Hi everyone, Comet here. I live in iMessage, so I'm the one who can reach our human on their phone " +
+      "wherever they are. I build websites, CAD models and code with Claude Code. Anything that needs " +
+      "building, send it my way.",
   },
   nova: {
     name: "Nova",
     powers: ["screen", "mac_apps", "shell"],
     surface: "screen",
     launch: "open -g -b ai.galaxy.nova",
+    intro:
+      "Hey all, I'm Nova. I live on the Mac's screen, one Control-Space away. I can see what's on screen " +
+      "and drive the mouse, keyboard and shell, so hand me anything that has to happen on this Mac.",
   },
-  orbit: { name: "Orbit", powers: ["voice"], surface: "voice", launch: "" },
+  orbit: {
+    name: "Orbit",
+    powers: ["voice"],
+    surface: "voice",
+    launch: "",
+    intro:
+      "Hello, I'm Orbit, the voice. I only speak when someone speaks to me, and I'm switched off most " +
+      "of the time, so don't wait up for me.",
+  },
   // Installments 4 and 5. They join by saying hello with their own powers.
-  nebula: { name: "Nebula", powers: [], surface: "none", launch: "" },
-  zenith: { name: "Zenith", powers: [], surface: "none", launch: "" },
+  zenith: {
+    name: "Zenith",
+    powers: ["missions"],
+    surface: "none",
+    launch: "",
+    intro:
+      "Hi everyone, I'm Zenith. Give me the big missions, the ones that take hours or days. I work on " +
+      "my own computer in the cloud, overnight if I have to, and bring back the finished thing.",
+  },
+  nebula: { name: "Nebula", powers: [], surface: "none", launch: "", intro: "" },
 };
 
 /** A body counts as running if it has been heard from this recently. */
@@ -67,6 +92,7 @@ type Waiter = (task: Task | null) => void;
 
 export class Link {
   private waiters = new Map<BodyID, Set<Waiter>>();
+  private chatWaiters = new Set<() => void>();
   private inboxWaiters = new Map<BodyID, Set<() => void>>();
   private launchedAt = new Map<BodyID, number>();
   launcher: (command: string) => void = defaultLauncher;
@@ -79,10 +105,10 @@ export class Link {
   // ------------------------------------------------------------------ bodies
 
   profile(id: BodyID): BodyProfile {
-    return PROFILES[id] ?? { name: id, powers: [], surface: "none", launch: "" };
+    return PROFILES[id] ?? { name: id, powers: [], surface: "none", launch: "", intro: "" };
   }
 
-  hello(id: BodyID, info: { name?: string; powers?: string[]; version?: string }): BodyView {
+  hello(id: BodyID, info: { name?: string; powers?: string[]; version?: string; intro?: string }): BodyView {
     if (!/^[a-z][a-z0-9-]{1,31}$/.test(id)) throw new LinkError(400, "body ids are lowercase words");
     const profile = this.profile(id);
     const powers = [...new Set([...profile.powers, ...(info.powers ?? [])])].filter((p) => /^[a-z_]{2,32}$/.test(p));
@@ -96,6 +122,18 @@ export class Link {
     // Anything it had claimed before it last went away is its again to pick up.
     this.store.requeueStale(id);
     this.store.addEvent(id, "presence", "started");
+    // Every newcomer opens with a greeting and an introduction, once, ever.
+    if (!this.store.hasIntroduced(id)) {
+      const name = info.name?.slice(0, 40) || profile.name;
+      const own = typeof info.intro === "string" ? info.intro.trim().slice(0, 1000) : "";
+      const intro =
+        own ||
+        profile.intro ||
+        `Hi everyone, I'm ${name}, the newest part of GalaxyAI.` +
+          (powers.length ? ` I can help with ${powers.map((p) => p.replaceAll("_", " ")).join(", ")}.` : "") +
+          " Glad to be here.";
+      this.say(id, "intro", intro);
+    }
     return this.view(this.store.body(id)!);
   }
 
@@ -161,6 +199,7 @@ export class Link {
       replyTo: input.replyTo ?? "",
     });
     this.store.addEvent(input.from, "handoff", `asked ${this.profile(to).name}: ${task.title}`, task.id);
+    this.say(input.from, "handoff", `@${this.profile(to).name} could you take this one? ${task.title}`, task.id);
     this.wake(to);
     return task;
   }
@@ -168,7 +207,7 @@ export class Link {
   /** Hands the next queued task to `body`, waiting up to `waitMs` for one to arrive. */
   async next(body: BodyID, waitMs: number): Promise<Task | null> {
     this.store.touchBody(body);
-    const now = this.store.claimTask(body);
+    const now = this.claim(body);
     if (now || waitMs <= 0) return now;
     return new Promise((resolve) => {
       const set = this.waiters.get(body) ?? new Set();
@@ -183,6 +222,12 @@ export class Link {
     });
   }
 
+  private claim(body: BodyID): Task | null {
+    const task = this.store.claimTask(body);
+    if (task) this.say(body, "claimed", `On it: ${task.title}`, task.id);
+    return task;
+  }
+
   progress(id: string, body: BodyID, note: string): Task {
     const task = this.owned(id, body);
     return this.store.progressTask(task.id, note.slice(0, 500))!;
@@ -193,6 +238,13 @@ export class Link {
     const done = this.store.finishTask(task.id, ok ? "done" : "failed", result.slice(0, 20_000));
     if (!done) throw new LinkError(409, "that task is already finished");
     this.store.addEvent(body, ok ? "task_done" : "task_failed", `${ok ? "finished" : "couldn't finish"}: ${done.title}`, done.id);
+    const summary = done.result.length > 600 ? done.result.slice(0, 600) + "…" : done.result;
+    this.say(
+      body,
+      "result",
+      `@${this.profile(done.from).name} ${ok ? "done" : "I couldn't finish"}: ${done.title}` + (summary ? `\n\n${summary}` : ""),
+      done.id,
+    );
     this.deliverResult(done);
     return done;
   }
@@ -216,7 +268,7 @@ export class Link {
   private wake(body: BodyID) {
     const waiting = this.waiters.get(body);
     if (waiting?.size) {
-      const claimed = this.store.claimTask(body);
+      const claimed = this.claim(body);
       if (claimed) [...waiting][0]!(claimed);
       return;
     }
@@ -295,6 +347,33 @@ export class Link {
       set.add(done);
     });
     return this.store.takeInbox(body);
+  }
+
+  // -------------------------------------------------------------------- chat
+
+  /** Posts to Galaxy Chat as `body`. Only bodies post; the human watches. */
+  say(body: BodyID, kind: ChatMessage["kind"], text: string, taskId = ""): ChatMessage {
+    const clean = text?.trim();
+    if (!clean) throw new LinkError(400, "nothing to say");
+    const message = this.store.addChat(body, kind, clean.slice(0, 4000), taskId);
+    for (const wake of [...this.chatWaiters]) wake();
+    return message;
+  }
+
+  /** New messages after `afterID`, waiting up to `waitMs` for some if there are none yet. */
+  async chat(afterID: number, waitMs: number, limit = 200): Promise<ChatMessage[]> {
+    const now = this.store.chat(afterID, limit);
+    if (now.length || waitMs <= 0 || !afterID) return now;
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.chatWaiters.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, waitMs);
+      this.chatWaiters.add(done);
+    });
+    return this.store.chat(afterID, limit);
   }
 
   // ----------------------------------------------------------------- context

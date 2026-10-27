@@ -53,6 +53,18 @@ export interface Task {
   updatedAt: number;
 }
 
+/** A line in Galaxy Chat, the group chat the bodies share. Only bodies post; you watch. */
+export type ChatKind = "intro" | "message" | "handoff" | "claimed" | "result";
+
+export interface ChatMessage {
+  id: number;
+  body: BodyID;
+  kind: ChatKind;
+  text: string;
+  taskId: string;
+  at: number;
+}
+
 export interface InboxItem {
   id: number;
   body: BodyID;
@@ -127,6 +139,15 @@ create table if not exists inbox (
   delivered_at integer not null default 0
 );
 create index if not exists inbox_body on inbox(body, delivered_at);
+create table if not exists chat (
+  id integer primary key autoincrement,
+  body text not null,
+  kind text not null,
+  text text not null,
+  task_id text not null default '',
+  at integer not null
+);
+create index if not exists chat_body on chat(body, kind);
 `;
 
 /** Two memories are the same memory if they differ only in case, spacing and end punctuation. */
@@ -325,6 +346,27 @@ export class Store {
     return changed ? this.task(id) : null;
   }
 
+  // -------------------------------------------------------------------- chat
+
+  addChat(body: BodyID, kind: ChatKind, text: string, taskId = ""): ChatMessage {
+    const result = this.db
+      .query("insert into chat (body, kind, text, task_id, at) values (?, ?, ?, ?, ?)")
+      .run(body, kind, text.trim(), taskId, this.now());
+    return rowToChat(this.db.query("select * from chat where id = ?").get(result.lastInsertRowid));
+  }
+
+  /** Messages after `afterID`, oldest first; with no `afterID`, the latest `limit`. */
+  chat(afterID = 0, limit = 200): ChatMessage[] {
+    const rows = afterID
+      ? (this.db.query("select * from chat where id > ? order by id limit ?").all(afterID, limit) as any[])
+      : (this.db.query("select * from chat order by id desc limit ?").all(limit) as any[]).reverse();
+    return rows.map(rowToChat);
+  }
+
+  hasIntroduced(body: BodyID): boolean {
+    return !!this.db.query("select 1 from chat where body = ? and kind = 'intro' limit 1").get(body);
+  }
+
   // ------------------------------------------------------------------- inbox
 
   addInbox(item: Pick<InboxItem, "body" | "kind" | "taskId" | "text" | "replyTo">): InboxItem {
@@ -370,6 +412,10 @@ function rowToTask(r: any): Task {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+function rowToChat(r: any): ChatMessage {
+  return { id: r.id, body: r.body, kind: r.kind, text: r.text, taskId: r.task_id, at: r.at };
 }
 
 function rowToInbox(r: any): InboxItem {

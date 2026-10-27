@@ -164,6 +164,18 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     if (method === "POST" && action === "cancel") return json(link.cancel(id, needBody()));
   }
 
+  // ------------------------------------------------------------------ chat
+  if (path === "/v1/chat" && method === "GET") {
+    const after = Math.max(Number(url.searchParams.get("after") ?? 0) || 0, 0);
+    return json(await link.chat(after, wait(), clamp(Number(url.searchParams.get("limit") ?? 200), 1, 1000)));
+  }
+  if (path === "/v1/chat" && method === "POST") {
+    const who = needBody();
+    if (!link.store.body(who)) throw new LinkError(403, "only bodies of GalaxyAI can talk in Galaxy Chat");
+    const { text } = await input();
+    return json(link.say(who, "message", String(text ?? "")), 201);
+  }
+
   // -------------------------------------------------------------- delivery
   if (path === "/v1/deliver" && method === "POST") return json(link.deliver(needBody(), (await input()).text), 201);
   if (path === "/v1/inbox" && method === "GET") return json(await link.inbox(needBody(), wait()));
