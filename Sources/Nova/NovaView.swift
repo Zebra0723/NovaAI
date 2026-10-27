@@ -55,6 +55,7 @@ struct NovaView: View {
                 }
 
                 if controller.isWorking {
+                    if let tier = controller.tier { ModelTag(tier: tier) }
                     KeyHint("esc")
                 }
             }
@@ -112,6 +113,7 @@ struct NovaView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if let tier = controller.tier { ModelTag(tier: tier) }
             KeyHint("esc")
         }
         .padding(.horizontal, 16)
@@ -205,5 +207,23 @@ private struct KeyHint: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
+/// Which model is on the job: a faint dot that brightens with difficulty, plus the model's name.
+private struct ModelTag: View {
+    let tier: Tier
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(Color(red: 0.7, green: 0.62, blue: 1))
+                .opacity(tier == .easy ? 0.35 : tier == .medium ? 0.65 : 1)
+                .frame(width: 5, height: 5)
+            Text(tier.label)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        .transition(.opacity)
     }
 }

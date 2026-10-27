@@ -9,6 +9,7 @@ final class NovaController: ObservableObject {
     @Published var answer: String?
     @Published var isWorking = false
     @Published var isActing = false
+    @Published var tier: Tier?
     @Published var needsKey = Keychain.apiKey == nil
     @Published var focusToken = 0 // bumped to pull keyboard focus into the field
 
@@ -100,6 +101,8 @@ final class NovaController: ObservableObject {
         switch event {
         case .status(let note):
             status = note
+        case .tier(let tier):
+            self.tier = tier
         case .acting(let acting):
             guard acting != isActing else { return }
             isActing = acting
@@ -114,6 +117,7 @@ final class NovaController: ObservableObject {
         isWorking = false
         isActing = false
         status = ""
+        tier = nil
         answer = reply
         panel?.present(acting: false, interactive: true)
         focusToken += 1

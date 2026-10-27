@@ -13,7 +13,15 @@ Press **⌃Space** anywhere. A minimal glass bar appears. Ask about whatever's o
 ## How it works
 
 - **Sees**: every request includes a screenshot of your main display (Nova hides itself from the capture).
-- **Thinks**: Claude Opus 5.5 through the Anthropic Messages API, with adaptive thinking. Its short progress notes show live in the bar.
+- **Thinks with the right model**: a quick Claude Haiku call first rates each request as easy, medium, or hard. The request then runs on the matching model, and the bar shows which one:
+
+  | Difficulty | Model | Effort | Examples |
+  |---|---|---|---|
+  | Easy | Claude Haiku 5.5 | low | Quick facts, "what does this say?", "open Spotify" |
+  | Medium | Claude Sonnet 5.5 | medium | Replying to an email, explaining an error, sorting files |
+  | Hard | Claude Opus 5.5 | high | Multi-app workflows, real coding, deep analysis |
+
+  If the rating fails for any reason, Nova uses Sonnet. Follow-ups get rated again, so a conversation can move between models.
 - **Acts**: Claude's [computer use toolset](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) handles clicks, typing, scrolling, and zoom. A `bash` tool handles files, apps, and anything else the shell does well.
 - **Full auto**: Nova doesn't ask before acting. While it's driving your Mac, the bar shrinks to a small pill under the menu bar that clicks pass through. **Press Esc at any time to stop it.**
 

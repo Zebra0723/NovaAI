@@ -6,12 +6,14 @@ final class NovaAgent {
     enum Event {
         case status(String)      // short progress note for the bar
         case acting(Bool)        // true while Nova is driving the mouse/keyboard
+        case tier(Tier)          // which model is handling this request
     }
 
     static let maxSteps = 80
 
     private let client: ClaudeClient
     private var messages: [[String: Any]] = []
+    private var lastRequest: String?
 
     init(apiKey: String) {
         client = ClaudeClient(apiKey: apiKey)
@@ -19,13 +21,22 @@ final class NovaAgent {
 
     /// Runs one user request to completion and returns Nova's reply.
     func run(_ request: String, onEvent: @escaping @MainActor (Event) -> Void) async throws -> String {
-        messages.append(["role": "user", "content": try await userContent(for: request)])
+        await onEvent(.status("Thinking…"))
+        let app = await MainActor.run { NSWorkspace.shared.frontmostApplication?.localizedName } ?? "unknown"
+
+        // Each request picks its own model: Haiku for easy, Sonnet for medium, Opus for hard.
+        var context = "Frontmost app: \(app)"
+        if let lastRequest { context += "\nPrevious request in this conversation: \(lastRequest)" }
+        let tier = await client.classify(request, context: context)
+        lastRequest = request
+        await onEvent(.tier(tier))
+
+        messages.append(["role": "user", "content": await userContent(for: request, app: app)])
 
         for _ in 0..<Self.maxSteps {
             try Task.checkCancellation()
-            await onEvent(.status("Thinking…"))
 
-            let response = try await client.send(system: Self.systemPrompt, messages: messages)
+            let response = try await client.send(tier: tier, system: Self.systemPrompt, messages: messages)
             let content = response["content"] as? [[String: Any]] ?? []
             // Append the full content unchanged; thinking blocks must round-trip as-is.
             messages.append(["role": "assistant", "content": content])
@@ -48,6 +59,7 @@ final class NovaAgent {
             case "tool_use":
                 let results = try await runTools(in: content, onEvent: onEvent)
                 messages.append(["role": "user", "content": results])
+                await onEvent(.status("Thinking…"))
             case "refusal":
                 await onEvent(.acting(false))
                 let reply = replyText.joined(separator: "\n\n")
@@ -125,12 +137,11 @@ final class NovaAgent {
 
     // MARK: - Request context
 
-    private func userContent(for request: String) async throws -> [[String: Any]] {
+    private func userContent(for request: String, app: String) async -> [[String: Any]] {
         var content: [[String: Any]] = []
         if Permissions.hasScreenRecording, let shot = try? await ScreenCapture.fullScreen() {
             content.append(Self.imageBlock(shot))
         }
-        let app = await MainActor.run { NSWorkspace.shared.frontmostApplication?.localizedName } ?? "unknown"
         content.append(["type": "text", "text": "[Frontmost app: \(app)]\n\n\(request)"])
         return content
     }
