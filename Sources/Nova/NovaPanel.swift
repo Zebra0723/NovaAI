@@ -5,8 +5,8 @@ import SwiftUI
 /// without stealing focus from the app the user is working in.
 @MainActor
 final class NovaPanel: NSPanel {
-    /// Room around the bar for its glow and shadow.
-    static let margin: CGFloat = 28
+    /// Room around the bar for its aura and shadow.
+    static let margin: CGFloat = 44
 
     private var contentSize = CGSize(width: 640, height: 56)
     private var acting = false

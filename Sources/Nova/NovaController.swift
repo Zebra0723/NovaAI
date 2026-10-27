@@ -7,6 +7,9 @@ final class NovaController: ObservableObject {
     @Published var input = ""
     @Published var status = ""
     @Published var answer: String?
+    @Published var answeredBy: Tier?
+    @Published var answerIsError = false
+    @Published var isShown = false
     @Published var isWorking = false
     @Published var isActing = false
     @Published var tier: Tier?
@@ -37,14 +40,18 @@ final class NovaController: ObservableObject {
         // Only force key entry when there's no key; don't undo "Change API Key…".
         if Keychain.apiKey == nil { needsKey = true }
         panel?.present(acting: isActing, interactive: !isWorking)
+        isShown = true
         focusToken += 1
     }
 
     func hide() {
         panel?.orderOut(nil)
+        isShown = false
         // Closing the bar ends the conversation; the next summon starts fresh.
         agent = nil
         answer = nil
+        answeredBy = nil
+        answerIsError = false
         input = ""
         status = ""
         // Backing out of "Change API Key…" keeps the current key.
@@ -68,6 +75,8 @@ final class NovaController: ObservableObject {
             agent = nil // the old conversation was using the old key
             input = ""
             needsKey = false
+            answeredBy = nil
+            answerIsError = false
             answer = "Key saved. Nova is awake ✦"
             return
         }
@@ -87,11 +96,12 @@ final class NovaController: ObservableObject {
                 let reply = try await agent.run(text) { event in
                     self?.handle(event)
                 }
-                self?.finish(with: reply, keepConversation: true)
+                self?.finish(with: reply, failed: false)
             } catch {
                 let cancelled = Task.isCancelled || error is CancellationError
                     || (error as? URLError)?.code == .cancelled
-                self?.finish(with: cancelled ? "Stopped." : error.localizedDescription, keepConversation: false)
+                self?.finish(with: cancelled ? "Stopped." : error.localizedDescription, failed: true,
+                             isError: !cancelled)
             }
         }
     }
@@ -114,10 +124,12 @@ final class NovaController: ObservableObject {
         }
     }
 
-    private func finish(with reply: String, keepConversation: Bool) {
+    private func finish(with reply: String, failed: Bool, isError: Bool = false) {
         task = nil
         // A cancelled or failed run can leave a tool call unanswered, so start over next time.
-        if !keepConversation { agent = nil }
+        if failed { agent = nil }
+        answeredBy = failed ? nil : tier
+        answerIsError = isError
         isWorking = false
         isActing = false
         status = ""
