@@ -127,7 +127,8 @@ struct ClaudeClient {
                 switch delta["type"] as? String {
                 case "text_delta":
                     let text = delta["text"] as? String ?? ""
-                    blocks[index]?["text"] = (blocks[index]?["text"] as? String ?? "") + text
+                    let full = (blocks[index]?["text"] as? String ?? "") + text
+                    blocks[index]?["text"] = full
                     await onText(text)
                 case "thinking_delta":
                     let piece = delta["thinking"] as? String ?? ""
@@ -136,7 +137,8 @@ struct ClaudeClient {
                     if !note.isEmpty { await onNote(note) }
                 case "signature_delta":
                     let piece = delta["signature"] as? String ?? ""
-                    blocks[index]?["signature"] = (blocks[index]?["signature"] as? String ?? "") + piece
+                    let signature = (blocks[index]?["signature"] as? String ?? "") + piece
+                    blocks[index]?["signature"] = signature
                 case "input_json_delta":
                     partialJSON[index, default: ""] += delta["partial_json"] as? String ?? ""
                 default:
