@@ -13,6 +13,13 @@ Nebula is GalaxyAI's fourth body: gesture control for the Mac. In the Galaxy's t
 - Frames live in memory for one detection and are never saved or sent.
 - Face *rectangles* only, never landmarks or identity, and only to place "finger to lips" and "hand to ear".
 
+## Real time
+- Nebula's own processing, from a frame arriving to the action firing, takes 10 ms or less at p95.
+- End to end, from hand movement to something happening on screen, aims for 40–60 ms. The camera frame interval and the display refresh are the hardware floor.
+- Static gestures fire after a short hold of about 0.15 s instead of ½ s. A visual cue appears on the first frame the pose is seen. A hold is lengthened only as far as needed for a gesture to pass the 99% accuracy gate.
+- Scroll, the volume knob and the pointer update every frame.
+- Dynamic gestures fire the moment the movement completes.
+
 ## Scope rule
 Window gestures act only on the frontmost window. If a gesture means nothing in that app, nothing happens: no desktop switching, no other apps.
 
@@ -22,12 +29,12 @@ The exceptions are the Galaxy gestures and the volume knob, which changes the Ma
 
 | Gesture | Exact movement | Action |
 |---|---|---|
-| Open palm | Flat hand, fingers together, palm to the screen, held still ½s | Play/pause media in the frontmost window |
-| Thumbs up | Fist, thumb up, held ½s | Approve the pending Galaxy approval |
-| Thumbs down | Fist, thumb down, held ½s | Reject it |
-| Peace sign | Index and middle up in a V, palm to the screen, held ½s | Summon Nova (the same as ⌃Space) |
+| Open palm | Flat hand, fingers together, palm to the screen, held still | Play/pause media in the frontmost window |
+| Thumbs up | Fist, thumb up, held | Approve the pending Galaxy approval |
+| Thumbs down | Fist, thumb down, held | Reject it |
+| Peace sign | Index and middle up in a V, palm to the screen, held | Summon Nova (the same as ⌃Space) |
 | Finger to lips | Index finger up, held against the lips ½s | Mute Orbit until unmuted (`orbit mute`) |
-| Hand to ear | Cupped hand behind the ear, held ½s | Unmute Orbit (`orbit unmute`) |
+| Hand to ear | Cupped hand behind the ear, held | Unmute Orbit (`orbit unmute`) |
 | Swipe left/right | Open flat hand moved quickly sideways, about shoulder width | Previous/next in the frontmost window: browser tabs, Keynote slides, Preview pages, Spotify/Music tracks |
 | Scroll | Index and middle together and up (like two fingers on a trackpad), palm to the screen, hand moved up/down; curl the fingers or drop the hand to stop | Scroll the frontmost window, trackpad-style, speed following the hand |
 | Volume knob | Thumb and index pinched as if holding a small knob, then a wrist twist: clockwise for up, counter-clockwise for down | Mac volume |
