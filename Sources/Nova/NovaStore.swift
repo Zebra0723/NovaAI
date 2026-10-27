@@ -103,16 +103,33 @@ struct Conversation: Codable, Identifiable, Equatable {
 }
 
 /// A fact Nova keeps about the user across conversations.
+/// With Galaxy Link running, this is the shared GalaxyAI memory: every body reads and writes it.
 struct Memory: Codable, Identifiable, Equatable {
-    enum Source: String, Codable { case nova, user }
+    enum Source: String, Codable {
+        case nova, user, comet, orbit, galaxy
+
+        init(link: String) { self = Source(rawValue: link) ?? .galaxy }
+
+        var label: String {
+            switch self {
+            case .user: return "Added by you"
+            case .nova: return "Saved by Nova"
+            case .comet: return "Saved by Comet"
+            case .orbit: return "Saved by Orbit"
+            case .galaxy: return "Saved by GalaxyAI"
+            }
+        }
+    }
 
     var id = UUID()
     var text: String
     var createdAt = Date()
     var source: Source
+    /// The memory's id in Galaxy Link, once it's there.
+    var linkID: String?
 
     /// Short id Nova uses to refer to the memory in its prompt and tools.
-    var shortID: String { String(id.uuidString.prefix(6)).lowercased() }
+    var shortID: String { linkID ?? String(id.uuidString.prefix(6)).lowercased() }
 }
 
 /// Running totals for proactive screen checks, which aren't part of any conversation.
@@ -185,12 +202,20 @@ final class NovaStore: ObservableObject {
     }
 
     // MARK: Memories
+    //
+    // Changes land locally first, so the app never waits on Link, and are
+    // mirrored to Link when it's running. NovaLink pulls Link's copy back in.
 
     @discardableResult
     func addMemory(_ text: String, source: Memory.Source) -> Memory {
         let memory = Memory(text: text.trimmingCharacters(in: .whitespacesAndNewlines), source: source)
         memories.insert(memory, at: 0)
         write(memories, to: memoriesURL)
+        Task {
+            if let linked = await GalaxyLink.shared.remember(memory.text, fromUser: source == .user) {
+                self.attach(linkID: linked.id, to: memory.id)
+            }
+        }
         return memory
     }
 
@@ -198,11 +223,17 @@ final class NovaStore: ObservableObject {
         guard let index = memories.firstIndex(where: { $0.id == memory.id }) else { return }
         memories[index].text = text
         write(memories, to: memoriesURL)
+        if let linkID = memories[index].linkID {
+            Task { await GalaxyLink.shared.update(memory: linkID, text: text) }
+        }
     }
 
     func deleteMemory(_ memory: Memory) {
         memories.removeAll { $0.id == memory.id }
         write(memories, to: memoriesURL)
+        if let linkID = memory.linkID {
+            Task { await GalaxyLink.shared.forget(memory: linkID) }
+        }
     }
 
     /// Deletes by the short id Nova sees. Returns false if nothing matched.
@@ -214,7 +245,39 @@ final class NovaStore: ObservableObject {
     }
 
     func deleteAllMemories() {
+        let linked = memories.compactMap(\.linkID)
         memories = []
+        write(memories, to: memoriesURL)
+        Task { for id in linked { await GalaxyLink.shared.forget(memory: id) } }
+    }
+
+    /// Records Link's id for a memory saved here. If Link already had that
+    /// memory under another local entry, the two were the same fact: keep one.
+    private func attach(linkID: String, to id: UUID) {
+        if memories.contains(where: { $0.linkID == linkID && $0.id != id }) {
+            memories.removeAll { $0.id == id }
+        } else if let index = memories.firstIndex(where: { $0.id == id }) {
+            memories[index].linkID = linkID
+        }
+        write(memories, to: memoriesURL)
+    }
+
+    /// Memories saved here that Link doesn't have yet (made while it wasn't running).
+    var unlinkedMemories: [Memory] { memories.filter { $0.linkID == nil } }
+
+    /// Replaces the local copy with Link's, keeping each memory's local id stable.
+    func applyLinkMemories(_ linked: [GalaxyLink.LinkMemory]) {
+        let existing = Dictionary(memories.compactMap { m in m.linkID.map { ($0, m) } }, uniquingKeysWith: { a, _ in a })
+        let updated = linked.map { item -> Memory in
+            var memory = existing[item.id] ?? Memory(text: item.text, source: Memory.Source(link: item.source))
+            memory.text = item.text
+            memory.source = Memory.Source(link: item.source)
+            memory.createdAt = Date(timeIntervalSince1970: item.createdAt / 1000)
+            memory.linkID = item.id
+            return memory
+        }
+        guard updated != memories else { return }
+        memories = updated
         write(memories, to: memoriesURL)
     }
 

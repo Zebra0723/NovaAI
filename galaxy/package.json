@@ -1,0 +1,18 @@
+{
+  "name": "galaxy-link",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Galaxy Link: one memory and one stream of work shared by every GalaxyAI body",
+  "type": "module",
+  "bin": {
+    "galaxyd": "src/galaxyd.ts",
+    "galaxy": "src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun src/galaxyd.ts",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4"
+  }
+}

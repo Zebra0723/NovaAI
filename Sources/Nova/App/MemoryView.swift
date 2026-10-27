@@ -87,7 +87,7 @@ private struct MemoryRow: View {
                         .font(Theme.body(14))
                         .textSelection(.enabled)
                 }
-                Text("\(memory.source == .nova ? "Saved by Nova" : "Added by you") · \(Format.date(memory.createdAt))")
+                Text("\(memory.source.label) · \(Format.date(memory.createdAt))")
                     .font(Theme.caption(11))
                     .foregroundStyle(Theme.tertiary)
             }
