@@ -90,7 +90,8 @@ struct NovaView: View {
     private var inputField: some View {
         Group {
             if controller.needsKey {
-                SecureField("Paste your Anthropic API key to wake Nova", text: $controller.input)
+                SecureField(Keychain.apiKey == nil ? "Paste your Anthropic API key to wake Nova" : "Paste your new Anthropic API key",
+                            text: $controller.input)
             } else {
                 TextField(controller.answer == nil ? "Ask Nova anything…" : "Follow up…", text: $controller.input)
             }

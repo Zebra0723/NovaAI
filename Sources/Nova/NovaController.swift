@@ -34,7 +34,8 @@ final class NovaController: ObservableObject {
     }
 
     func show() {
-        needsKey = Keychain.apiKey == nil
+        // Only force key entry when there's no key; don't undo "Change API Key…".
+        if Keychain.apiKey == nil { needsKey = true }
         panel?.present(acting: isActing, interactive: !isWorking)
         focusToken += 1
     }
@@ -46,6 +47,8 @@ final class NovaController: ObservableObject {
         answer = nil
         input = ""
         status = ""
+        // Backing out of "Change API Key…" keeps the current key.
+        needsKey = Keychain.apiKey == nil
     }
 
     func beginKeyEntry() {
@@ -62,6 +65,7 @@ final class NovaController: ObservableObject {
 
         if needsKey {
             Keychain.saveAPIKey(text)
+            agent = nil // the old conversation was using the old key
             input = ""
             needsKey = false
             answer = "Key saved. Nova is awake ✦"
