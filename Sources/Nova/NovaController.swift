@@ -1,0 +1,148 @@
+import AppKit
+import SwiftUI
+
+/// Owns Nova's UI state and runs requests through the agent.
+@MainActor
+final class NovaController: ObservableObject {
+    @Published var input = ""
+    @Published var status = ""
+    @Published var answer: String?
+    @Published var isWorking = false
+    @Published var isActing = false
+    @Published var needsKey = Keychain.apiKey == nil
+    @Published var focusToken = 0 // bumped to pull keyboard focus into the field
+
+    weak var panel: NovaPanel?
+
+    private var agent: NovaAgent?
+    private var task: Task<Void, Never>?
+    private var monitors: [Any] = []
+
+    init() {
+        installEscapeMonitors()
+    }
+
+    // MARK: - Showing and hiding
+
+    func toggle() {
+        if panel?.isVisible == true && !isWorking {
+            hide()
+        } else {
+            show()
+        }
+    }
+
+    func show() {
+        needsKey = Keychain.apiKey == nil
+        panel?.present(acting: isActing, interactive: !isWorking)
+        focusToken += 1
+    }
+
+    func hide() {
+        panel?.orderOut(nil)
+        // Closing the bar ends the conversation; the next summon starts fresh.
+        agent = nil
+        answer = nil
+        input = ""
+        status = ""
+    }
+
+    func beginKeyEntry() {
+        needsKey = true
+        answer = nil
+        show()
+    }
+
+    // MARK: - Requests
+
+    func submit() {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isWorking else { return }
+
+        if needsKey {
+            Keychain.saveAPIKey(text)
+            input = ""
+            needsKey = false
+            answer = "Key saved. Nova is awake ✦"
+            return
+        }
+        guard let key = Keychain.apiKey else { needsKey = true; return }
+
+        let agent = self.agent ?? NovaAgent(apiKey: key)
+        self.agent = agent
+        input = ""
+        answer = nil
+        status = "Thinking…"
+        isWorking = true
+        // Give keyboard focus back to the user's app so Nova's typing lands there.
+        panel?.present(acting: false, interactive: false)
+
+        task = Task { [weak self] in
+            do {
+                let reply = try await agent.run(text) { event in
+                    self?.handle(event)
+                }
+                self?.finish(with: reply, keepConversation: true)
+            } catch {
+                let cancelled = Task.isCancelled || error is CancellationError
+                    || (error as? URLError)?.code == .cancelled
+                self?.finish(with: cancelled ? "Stopped." : error.localizedDescription, keepConversation: false)
+            }
+        }
+    }
+
+    func cancel() {
+        guard isWorking else { return }
+        task?.cancel()
+    }
+
+    private func handle(_ event: NovaAgent.Event) {
+        switch event {
+        case .status(let note):
+            status = note
+        case .acting(let acting):
+            guard acting != isActing else { return }
+            isActing = acting
+            panel?.present(acting: acting, interactive: false)
+        }
+    }
+
+    private func finish(with reply: String, keepConversation: Bool) {
+        task = nil
+        // A cancelled or failed run can leave a tool call unanswered, so start over next time.
+        if !keepConversation { agent = nil }
+        isWorking = false
+        isActing = false
+        status = ""
+        answer = reply
+        panel?.present(acting: false, interactive: true)
+        focusToken += 1
+    }
+
+    // MARK: - Esc kill switch
+
+    private func installEscapeMonitors() {
+        // Global: Esc anywhere stops a running task. Ignores the key presses Nova itself posts.
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            guard event.keyCode == KeyCodes.escape,
+                  event.cgEvent?.getIntegerValueField(.eventSourceUserData) != ComputerController.eventTag
+            else { return }
+            Task { @MainActor in self?.cancel() }
+        }) {
+            monitors.append(global)
+        }
+
+        // Local: Esc while the bar has focus stops a task, or closes the bar.
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            guard event.keyCode == KeyCodes.escape else { return event }
+            let handled = MainActor.assumeIsolated { () -> Bool in
+                guard let self else { return false }
+                if self.isWorking { self.cancel() } else { self.hide() }
+                return true
+            }
+            return handled ? nil : event
+        }) {
+            monitors.append(local)
+        }
+    }
+}
