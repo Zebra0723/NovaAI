@@ -143,12 +143,6 @@ extension View {
 // MARK: - Formatting
 
 enum Format {
-    static func cost(_ value: Double) -> String {
-        if value == 0 { return "$0.00" }
-        if value < 0.01 { return String(format: "$%.4f", value) }
-        return String(format: "$%.2f", value)
-    }
-
     static func tokens(_ value: Int) -> String {
         switch value {
         case 1_000_000...: return String(format: "%.1fM", Double(value) / 1_000_000)

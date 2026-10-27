@@ -121,8 +121,6 @@ private struct ConversationRow: View {
                         Text("\(conversation.exchanges.count) messages")
                     }
                     Spacer()
-                    Text(Format.cost(conversation.usage.costUSD))
-                        .monospacedDigit()
                 }
                 .font(Theme.caption(11))
                 .foregroundStyle(Theme.tertiary)
@@ -182,7 +180,6 @@ private struct ConversationDetail: View {
                 conversation.startedAt.formatted(date: .long, time: .shortened),
                 "\(conversation.exchanges.count) message\(conversation.exchanges.count == 1 ? "" : "s")",
                 "\(Format.tokens(usage.totalTokens)) tokens",
-                Format.cost(usage.costUSD),
             ].joined(separator: "  ·  "))
             .font(Theme.caption(12))
             .foregroundStyle(Theme.tertiary)
@@ -295,7 +292,6 @@ private struct ExchangeView: View {
             }
             metaItem("Time", Format.duration(exchange.duration))
             metaItem("Tokens", Format.tokens(exchange.usage.totalTokens))
-            metaItem("Cost", Format.cost(exchange.usage.costUSD))
             Spacer()
             Text(exchange.date.formatted(date: .omitted, time: .shortened))
                 .font(Theme.caption(11))

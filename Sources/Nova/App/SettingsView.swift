@@ -90,7 +90,7 @@ struct SettingsView: View {
     private var proactive: some View {
         group("Proactive help") {
             toggle("Offer help when Nova spots a problem",
-                   detail: "Nova glances at your screen when it changes and offers to fix errors and failed builds. Each check uses Haiku and costs a fraction of a cent.",
+                   detail: "Nova glances at your screen when it changes and offers to fix errors and failed builds. Each check uses Haiku.",
                    isOn: $store.settings.proactiveEnabled)
             if store.settings.proactiveEnabled {
                 Hairline()

@@ -25,7 +25,7 @@ Press **⌃Space** anywhere. A minimal glass bar appears. Ask about whatever's o
 - **Streams**: answers appear word by word as Claude writes them.
 - **Picks up context**: when you summon Nova, it grabs your selected text, the page open in your browser (Safari, Chrome, Arc, Brave, Edge, Vivaldi), and files selected in Finder. They show as chips in the bar; click × on any you don't want to send.
 - **Remembers**: Nova saves lasting facts about you (preferences, people, projects) with a `remember` tool and uses them in every conversation. Manage them in the app.
-- **Speaks up**: while you work, Nova checks your screen with Haiku when it changes. If it spots a problem, like an error or a failed build, a small card offers to fix it. Each check costs a fraction of a cent; turn it off or slow it down in Settings.
+- **Speaks up**: while you work, Nova checks your screen with Haiku when it changes. If it spots a problem, like an error or a failed build, a small card offers to fix it. Turn it off or slow it down in Settings.
 - **Acts**: Claude's [computer use toolset](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) handles clicks, typing, scrolling, and zoom. A `bash` tool handles files, apps, and anything else the shell does well.
 - **Full auto**: Nova doesn't ask before acting. While it's driving your Mac, the bar shrinks to a small pill under the menu bar that clicks pass through. **Press Esc at any time to stop it.**
 
@@ -37,9 +37,9 @@ Drag the bar anywhere on screen, and resize it with the grip in its bottom-right
 
 Click the star in the menu bar → **Open Nova**. The app has four pages:
 
-- **Conversations**: every conversation Nova has had, searchable, with each request, reply, the actions Nova took, the model, time, tokens, and cost.
+- **Conversations**: every conversation Nova has had, searchable, with each request, reply, the actions Nova took, the model, time, and tokens.
 - **Memory**: everything Nova remembers about you. Add, edit, or delete memories.
-- **Stats**: totals, requests per day, a breakdown by model, and what proactive checks have cost.
+- **Stats**: totals, requests per day, a breakdown by model, and proactive checks.
 - **Settings**: API key, proactive help, smart context, launch at login, permissions, and your data.
 
 Everything is stored on your Mac in `~/Library/Application Support/Nova`.

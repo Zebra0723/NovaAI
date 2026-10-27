@@ -15,15 +15,10 @@ struct StatsView: View {
     private struct ModelRow: Identifiable {
         let tier: Tier
         let requests: Int
-        let cost: Double
         var id: Tier { tier }
     }
 
     private var exchanges: [Exchange] { store.conversations.flatMap(\.exchanges) }
-
-    private var totalSpend: Double {
-        exchanges.reduce(0) { $0 + $1.usage.costUSD } + store.backgroundStats.usage.costUSD
-    }
 
     private var days: [DayCount] {
         let calendar = Calendar.current
@@ -41,15 +36,14 @@ struct StatsView: View {
     private var models: [ModelRow] {
         Tier.allCases.map { tier in
             let matching = exchanges.filter { $0.tier == tier.rawValue }
-            return ModelRow(tier: tier, requests: matching.count,
-                            cost: matching.reduce(0) { $0 + $1.usage.costUSD })
+            return ModelRow(tier: tier, requests: matching.count)
         }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                PageHeader(title: "Stats", subtitle: "Everything Nova has done for you, and what it cost.")
+                PageHeader(title: "Stats", subtitle: "Everything Nova has done for you.")
 
                 tiles
                 activity
@@ -76,7 +70,7 @@ struct StatsView: View {
             StatTile(label: "Requests", value: "\(exchanges.count)")
             StatTile(label: "Actions taken", value: "\(exchanges.reduce(0) { $0 + $1.actions.count })")
             StatTile(label: "Average time", value: completed.isEmpty ? "–" : Format.duration(averageTime))
-            StatTile(label: "Total spent", value: Format.cost(totalSpend))
+            StatTile(label: "Memories", value: "\(store.memories.count)")
         }
     }
 
@@ -153,7 +147,7 @@ struct StatsView: View {
                                 .font(Theme.caption(11))
                                 .foregroundStyle(Theme.tertiary)
                             Spacer()
-                            Text("\(row.requests) · \(Format.cost(row.cost))")
+                            Text("\(row.requests) request\(row.requests == 1 ? "" : "s")")
                                 .font(Theme.caption(12))
                                 .foregroundStyle(Theme.secondary)
                                 .monospacedDigit()
@@ -169,7 +163,6 @@ struct StatsView: View {
                         }
                         .frame(height: 6)
                     }
-                    .help("\(row.tier.displayName): \(row.requests) requests, \(Format.cost(row.cost))")
                 }
             }
         }
@@ -194,7 +187,6 @@ struct StatsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     statLine("Screens checked", "\(background.checks)")
                     statLine("Problems spotted", "\(background.notices)")
-                    statLine("Cost", Format.cost(background.usage.costUSD))
                 }
                 Text(store.settings.proactiveEnabled ? "On. Change this in Settings." : "Off. Turn it on in Settings.")
                     .font(Theme.caption(11))
