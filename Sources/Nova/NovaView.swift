@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The Nova bar: a single line of glass with a soft nova aura. It swirls to life
@@ -8,6 +9,8 @@ struct NovaView: View {
 
     @FocusState private var focused: Bool
     @State private var appeared = false
+    @State private var measuredAnswerHeight: CGFloat = 200
+    @State private var resizeStart: (width: CGFloat, height: CGFloat, mouse: NSPoint)?
 
     private var acting: Bool { controller.isActing }
     private var radius: CGFloat { acting ? 19 : 26 }
@@ -103,7 +106,40 @@ struct NovaView: View {
                     .transition(.opacity.combined(with: .offset(y: -6)))
             }
         }
-        .frame(width: 680)
+        .frame(width: controller.barWidth)
+        .contentShape(Rectangle())
+        // Grab Nova anywhere (except inside text) and put it anywhere on screen.
+        .gesture(
+            DragGesture(minimumDistance: 3)
+                .onChanged { _ in controller.panel?.userDragChanged() }
+                .onEnded { _ in controller.panel?.userDragEnded() }
+        )
+        .overlay(alignment: .bottomTrailing) {
+            ResizeGrip()
+                .gesture(resizeGesture)
+                .padding(6)
+        }
+    }
+
+    /// Drag the corner grip: sideways changes the width, up/down changes the answer height.
+    private var resizeGesture: some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { _ in
+                let mouse = NSEvent.mouseLocation
+                if resizeStart == nil {
+                    controller.panel?.pinPosition()
+                    resizeStart = (controller.barWidth, controller.answerHeight ?? measuredAnswerHeight, mouse)
+                }
+                guard let start = resizeStart else { return }
+                controller.barWidth = min(1200, max(460, start.width + mouse.x - start.mouse.x))
+                if controller.answer != nil {
+                    controller.answerHeight = min(900, max(120, start.height + start.mouse.y - mouse.y))
+                }
+            }
+            .onEnded { _ in
+                resizeStart = nil
+                controller.saveSize()
+            }
     }
 
     @ViewBuilder
@@ -167,8 +203,14 @@ struct NovaView: View {
                 .padding(.bottom, 16)
             }
             .scrollIndicators(.never)
-            .frame(maxHeight: 400)
-            .fixedSize(horizontal: false, vertical: true)
+            .answerFrame(controller.answerHeight)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { measuredAnswerHeight = proxy.size.height }
+                        .onChange(of: proxy.size.height) { _, height in measuredAnswerHeight = height }
+                }
+            )
             .mask(
                 VStack(spacing: 0) {
                     Color.black
@@ -445,4 +487,36 @@ private struct Shimmer: ViewModifier {
 
 private extension View {
     func shimmer() -> some View { modifier(Shimmer()) }
+
+    /// A fixed answer height once the user has resized it; otherwise fit the answer, up to 400pt.
+    @ViewBuilder
+    func answerFrame(_ height: CGFloat?) -> some View {
+        if let height {
+            frame(height: height)
+        } else {
+            frame(maxHeight: 400).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Three short diagonal lines in the bottom-right corner, the classic resize grip.
+private struct ResizeGrip: View {
+    @State private var hovering = false
+
+    var body: some View {
+        Canvas { context, size in
+            for inset in [4.0, 8.0, 12.0] {
+                var line = Path()
+                line.move(to: CGPoint(x: size.width, y: size.height - inset))
+                line.addLine(to: CGPoint(x: size.width - inset, y: size.height))
+                context.stroke(line, with: .color(.primary), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+            }
+        }
+        .frame(width: 13, height: 13)
+        .opacity(hovering ? 0.55 : 0.22)
+        .padding(5)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .help("Drag to resize")
+    }
 }

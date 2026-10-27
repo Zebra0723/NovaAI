@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(login)
 
         menu.addItem(withTitle: "Change API Key…", action: #selector(changeKey), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Reset Size & Position", action: #selector(resetLayout), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Check Permissions", action: #selector(checkPermissions), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Nova", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -59,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func summon() { controller.show() }
     @objc private func stop() { controller.cancel() }
     @objc private func changeKey() { controller.beginKeyEntry() }
+    @objc private func resetLayout() { controller.resetSizeAndPosition() }
     @objc private func checkPermissions() { Permissions.requestIfNeeded(force: true) }
 
     @objc private func toggleLoginItem(_ sender: NSMenuItem) {

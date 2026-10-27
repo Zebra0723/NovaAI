@@ -27,6 +27,8 @@ Press **⌃Space** anywhere. A minimal glass bar appears. Ask about whatever's o
 
 Close the bar (Esc, or ⌃Space again) to end the conversation. While it's open, you can keep typing follow-ups.
 
+Drag the bar anywhere on screen, and resize it with the grip in its bottom-right corner. Nova remembers both. **Reset Size & Position** in the ✦ menu puts it back.
+
 ## Setup
 
 Requirements: macOS 14 or later (built for macOS 27 and Liquid Glass), Xcode or the Swift toolchain, and an [Anthropic API key](https://platform.claude.com/).

@@ -16,6 +16,18 @@ final class NovaController: ObservableObject {
     @Published var needsKey = Keychain.apiKey == nil
     @Published var focusToken = 0 // bumped to pull keyboard focus into the field
 
+    // Bar size the user picked with the resize grip; saved between launches.
+    static let defaultBarWidth: CGFloat = 680
+    @Published var barWidth: CGFloat = {
+        let saved = UserDefaults.standard.double(forKey: "nova.barWidth")
+        return saved > 0 ? saved : NovaController.defaultBarWidth
+    }()
+    /// Fixed height for the answer area, or nil to fit the answer (up to a limit).
+    @Published var answerHeight: CGFloat? = {
+        let saved = UserDefaults.standard.double(forKey: "nova.answerHeight")
+        return saved > 0 ? saved : nil
+    }()
+
     weak var panel: NovaPanel?
 
     private var agent: NovaAgent?
@@ -56,6 +68,21 @@ final class NovaController: ObservableObject {
         status = ""
         // Backing out of "Change API Key…" keeps the current key.
         needsKey = Keychain.apiKey == nil
+    }
+
+    func saveSize() {
+        UserDefaults.standard.set(Double(barWidth), forKey: "nova.barWidth")
+        if let answerHeight {
+            UserDefaults.standard.set(Double(answerHeight), forKey: "nova.answerHeight")
+        }
+    }
+
+    func resetSizeAndPosition() {
+        barWidth = Self.defaultBarWidth
+        answerHeight = nil
+        UserDefaults.standard.removeObject(forKey: "nova.barWidth")
+        UserDefaults.standard.removeObject(forKey: "nova.answerHeight")
+        panel?.resetPosition()
     }
 
     func beginKeyEntry() {
