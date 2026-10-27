@@ -101,6 +101,10 @@ struct AppRootView: View {
         .tint(Theme.accent)
     }
 
+    private static func count(_ n: Int, _ singular: String, _ plural: String? = nil) -> String {
+        "\(n) \(n == 1 ? singular : (plural ?? singular + "s"))"
+    }
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 9) {
@@ -125,7 +129,7 @@ struct AppRootView: View {
                 Text("Press ⌃Space to summon Nova")
                     .font(Theme.caption(11))
                     .foregroundStyle(Theme.tertiary)
-                Text("\(store.conversations.count) conversations · \(store.memories.count) memories")
+                Text("\(Self.count(store.conversations.count, "conversation")) · \(Self.count(store.memories.count, "memory", "memories"))")
                     .font(Theme.caption(11))
                     .foregroundStyle(Theme.tertiary)
             }
