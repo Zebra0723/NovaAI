@@ -23,6 +23,15 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
+    static func deleteAPIKey() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
     static func saveAPIKey(_ key: String) {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

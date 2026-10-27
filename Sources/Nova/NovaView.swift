@@ -52,6 +52,7 @@ struct NovaView: View {
         .fixedSize()
         .animation(.spring(response: 0.42, dampingFraction: 0.84), value: acting)
         .animation(.spring(response: 0.36, dampingFraction: 0.9), value: controller.answer)
+        .animation(.easeOut(duration: 0.2), value: controller.context)
         .animation(.easeOut(duration: 0.18), value: controller.input.isEmpty)
         .onChange(of: controller.focusToken) { _, _ in focused = true }
         .onChange(of: controller.isShown) { _, shown in
@@ -101,8 +102,16 @@ struct NovaView: View {
                     .padding(.top, -8)
             }
 
-            if let answer = controller.answer, !controller.isWorking {
-                answerSection(answer)
+            if !controller.context.isEmpty && !controller.isWorking && !controller.needsKey {
+                contextChips
+                    .transition(.opacity)
+            }
+
+            if controller.isWorking && !controller.liveText.isEmpty {
+                answerSection(controller.liveText, live: true)
+                    .transition(.opacity.combined(with: .offset(y: -6)))
+            } else if let answer = controller.answer, !controller.isWorking {
+                answerSection(answer, live: false)
                     .transition(.opacity.combined(with: .offset(y: -6)))
             }
         }
@@ -179,7 +188,21 @@ struct NovaView: View {
         .onAppear { focused = true }
     }
 
-    private func answerSection(_ answer: String) -> some View {
+    /// What Nova picked up when summoned. Each chip can be removed before sending.
+    private var contextChips: some View {
+        HStack(spacing: 6) {
+            ForEach(controller.context) { item in
+                ContextChip(item: item) { controller.removeContext(item) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 58)
+        .padding(.trailing, 18)
+        .padding(.top, -6)
+        .padding(.bottom, 12)
+    }
+
+    private func answerSection(_ answer: String, live: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             LinearGradient(colors: [.clear, Color.primary.opacity(0.13), .clear],
                            startPoint: .leading, endPoint: .trailing)
@@ -188,7 +211,7 @@ struct NovaView: View {
 
             ScrollView {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    if controller.answerIsError {
+                    if controller.answerIsError && !live {
                         Image(systemName: "exclamationmark.circle.fill")
                             .foregroundStyle(.orange)
                     }
@@ -219,14 +242,16 @@ struct NovaView: View {
                 }
             )
 
-            HStack(spacing: 14) {
-                if let tier = controller.answeredBy { ModelTag(tier: tier) }
-                Spacer()
-                FooterHint(key: "↵", label: "follow up")
-                FooterHint(key: "esc", label: "close")
+            if !live {
+                HStack(spacing: 14) {
+                    if let tier = controller.answeredBy { ModelTag(tier: tier) }
+                    Spacer()
+                    FooterHint(key: "↵", label: "follow up")
+                    FooterHint(key: "esc", label: "close")
+                }
+                .padding(.horizontal, 22)
+                .padding(.bottom, 14)
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 14)
         }
     }
 
@@ -422,6 +447,45 @@ private struct KeyHint: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             )
+    }
+}
+
+private struct ContextChip: View {
+    let item: ContextItem
+    let onRemove: () -> Void
+
+    private var icon: String {
+        switch item.kind {
+        case .selection: return "text.cursor"
+        case .browser: return "globe"
+        case .finder: return "doc"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(item.label)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 200, alignment: .leading)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Don't send this")
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Color.primary.opacity(0.06), in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
+        .fixedSize()
     }
 }
 

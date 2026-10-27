@@ -22,12 +22,27 @@ Press **⌃Space** anywhere. A minimal glass bar appears. Ask about whatever's o
   | Hard | Claude Opus 5.5 | high | Multi-app workflows, real coding, deep analysis |
 
   If the rating fails for any reason, Nova uses Sonnet. Follow-ups get rated again, so a conversation can move between models.
+- **Streams**: answers appear word by word as Claude writes them.
+- **Picks up context**: when you summon Nova, it grabs your selected text, the page open in your browser (Safari, Chrome, Arc, Brave, Edge, Vivaldi), and files selected in Finder. They show as chips in the bar; click × on any you don't want to send.
+- **Remembers**: Nova saves lasting facts about you (preferences, people, projects) with a `remember` tool and uses them in every conversation. Manage them in the app.
+- **Speaks up**: while you work, Nova checks your screen with Haiku when it changes. If it spots a problem, like an error or a failed build, a small card offers to fix it. Each check costs a fraction of a cent; turn it off or slow it down in Settings.
 - **Acts**: Claude's [computer use toolset](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) handles clicks, typing, scrolling, and zoom. A `bash` tool handles files, apps, and anything else the shell does well.
 - **Full auto**: Nova doesn't ask before acting. While it's driving your Mac, the bar shrinks to a small pill under the menu bar that clicks pass through. **Press Esc at any time to stop it.**
 
 Close the bar (Esc, or ⌃Space again) to end the conversation. While it's open, you can keep typing follow-ups.
 
-Drag the bar anywhere on screen, and resize it with the grip in its bottom-right corner. Nova remembers both. **Reset Size & Position** in the ✦ menu puts it back.
+Drag the bar anywhere on screen, and resize it with the grip in its bottom-right corner. Nova remembers both. **Settings → Bar size and position** puts it back.
+
+## The Nova app
+
+Click the star in the menu bar → **Open Nova**. The app has four pages:
+
+- **Conversations**: every conversation Nova has had, searchable, with each request, reply, the actions Nova took, the model, time, tokens, and cost.
+- **Memory**: everything Nova remembers about you. Add, edit, or delete memories.
+- **Stats**: totals, requests per day, a breakdown by model, and what proactive checks have cost.
+- **Settings**: API key, proactive help, smart context, launch at login, permissions, and your data.
+
+Everything is stored on your Mac in `~/Library/Application Support/Nova`.
 
 ## Setup
 
@@ -43,7 +58,7 @@ Then:
 
 1. **Grant permissions** when macOS asks: **Screen Recording** (to see) and **Accessibility** (to click and type). They're in System Settings → Privacy & Security. Relaunch Nova after granting them.
 2. Press **⌃Space** and paste your API key into the bar. It's stored in your login keychain. You can also set `ANTHROPIC_API_KEY` instead.
-3. Optional: turn on **Launch at Login** in the ✦ menu-bar menu.
+3. Optional: turn on **Launch at login** in Nova's Settings.
 
 > **Heads up:** macOS uses ⌃Space to switch keyboard input sources. If you have more than one input source, turn that shortcut off in System Settings → Keyboard → Keyboard Shortcuts → Input Sources.
 
@@ -54,12 +69,16 @@ Then:
 
 ```
 Sources/Nova/
-  NovaApp.swift            App entry, menu-bar item, ⌃Space hotkey
+  NovaApp.swift            App entry, menus, menu-bar item, ⌃Space hotkey
+  NovaStore.swift          Conversations, memories, settings, usage and cost (on disk)
+  ContextGatherer.swift    Selected text, browser tab, Finder selection
+  ProactiveWatcher.swift   Background screen checks and the suggestion card
+  App/                     The Nova app window: conversations, memory, stats, settings
   NovaController.swift     UI state, request lifecycle, Esc kill switch
   NovaPanel.swift          Floating, non-activating panel (bar ↔ pill)
   NovaView.swift           The glass bar, nova glow, and answer view
   NovaAgent.swift          Agent loop: request + screenshot → Claude → tools → repeat
-  ClaudeClient.swift       Messages API client (raw HTTP)
+  ClaudeClient.swift       Messages API client (raw HTTP, streaming), routing, screen checks
   ComputerController.swift Computer toolset actions as CGEvents
   ScreenCapture.swift      ScreenCaptureKit screenshots and zoom, coordinate mapping
   BashTool.swift           Shell commands for the bash tool
