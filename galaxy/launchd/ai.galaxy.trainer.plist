@@ -20,6 +20,10 @@
     <!-- launchd starts with a minimal PATH; bun and claude must be findable. -->
     <key>PATH</key>
     <string>__PATH__</string>
+    <key>GALAXY_TRAINER_CLAUDE</key>
+    <string>__CLAUDE__</string>
+    <key>HOME</key>
+    <string>__HOME__</string>
   </dict>
   <key>StandardOutPath</key>
   <string>__HOME__/Library/Application Support/Galaxy/trainer.log</string>

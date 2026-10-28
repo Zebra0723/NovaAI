@@ -74,7 +74,7 @@ const nameOf = (id: string) => NAMES[id] ?? id.charAt(0).toUpperCase() + id.slic
 const THINK_MS = 180_000;
 const SHORT_THINK_MS = 120_000;
 /** Kept back from the drills for the playbook and summary. */
-const WRAP_RESERVE_MS = 150_000;
+const WRAP_RESERVE_MS = 90_000;
 const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export class Coach {
@@ -176,7 +176,7 @@ export class Coach {
     // Never the same drill twice: anything already done is dropped.
     const seen = new Set(l.past.map(key));
     const fresh = (title: string) => !seen.has(key(title)) && !!seen.add(key(title));
-    let drills = (planned?.drills ?? []).filter((d) => d?.prompt && d?.title && fresh(d.title));
+    let drills: Drill[] = (planned?.drills ?? []).filter((d) => d?.prompt && d?.title && fresh(d.title));
     if (!drills.length) {
       drills = [...plan.scenarios]
         .reverse()
@@ -196,16 +196,39 @@ export class Coach {
       return;
     }
 
-    for (const [i, drill] of drills.entries()) {
-      if (this.now() > ctx.deadline - WRAP_RESERVE_MS) break;
+    // Tonight's drills, then more, until the time is used: each new round is designed
+    // around how tonight is going, so the whole session goes to the weak spots.
+    let round = 0;
+    while (drills.length && round < 6) {
+      round++;
+      const more = await this.runDrills(ctx, l, drills, practises);
+      if (!more || this.now() > ctx.deadline - WRAP_RESERVE_MS - 60_000) break;
+      const sofar = (await this.o.call<MemberDetail>("GET", `/v1/training/${member}`))?.thread.filter((m) => m.sessionId === sid) ?? [];
+      const next = readJSON<{ drills?: Drill[] }>(await this.think(morePrompt(nameOf(member), l, sofar, [...seen]), SHORT_THINK_MS));
+      drills = (next?.drills ?? []).filter((d) => d?.prompt && d?.title && fresh(d.title)).slice(0, 3);
+    }
+  }
+
+  /** Runs drills until they or the time run out. False if the session has to stop. */
+  private async runDrills(ctx: Ctx, l: Learnt, drills: Drill[], practises: boolean): Promise<boolean> {
+    const { member, sid } = ctx;
+    for (const drill of drills) {
+      if (this.now() > ctx.deadline - WRAP_RESERVE_MS) return false;
       if (await this.busy(member)) {
         ctx.stopped = `${nameOf(member)} picked up real work`;
         await this.say(member, "message", `${nameOf(member)} has real work to do, so we'll stop here. Real work always comes first.`, { sessionId: sid });
-        break;
+        return false;
       }
       const sim = drill.type === "simulation" || (drill.turns ?? 1) > 1;
-      const transcript = sim ? await this.simulate(ctx, l, drill, practises, i + 1) : await this.single(ctx, l, drill, practises);
-      if (!transcript) continue;
+      const transcript = sim ? await this.simulate(ctx, l, drill, practises, ctx.drills + 1) : await this.single(ctx, l, drill, practises);
+      if (!transcript) {
+        // Nothing came back at all: thinking has stopped working, so don't burn the rest of the session.
+        if (this.o.think.lastError) {
+          ctx.stopped = `Claude Code stopped answering (${this.o.think.lastError})`;
+          return false;
+        }
+        continue;
+      }
       ctx.drills++;
       const graded = readJSON<{ score?: number; feedback?: string }>(
         await this.think(gradePrompt(nameOf(member), l.program, drill, transcript), Math.min(SHORT_THINK_MS, ctx.deadline - this.now())),
@@ -216,6 +239,7 @@ export class Coach {
         await this.say(member, "feedback", graded.feedback?.trim() || "Graded.", { sessionId: sid, score });
       }
     }
+    return true;
   }
 
   /** One situation, one answer. */
@@ -464,6 +488,26 @@ Practice is always a dry run: ${name} answers with what it would do, and never d
 
 Reply with JSON only:
 {"observations":["..."],"focus":["..."],"rubric":["..."],"newScenarios":[{"title":"...","setup":"...","data":"...","good":"..."}],"drills":[{"type":"simulation","title":"unique short title","prompt":"the opening situation, as ${name} meets it","persona":"who you play","world":"hidden facts","twists":["..."],"turns":3,"good":"what a great run looks like"},{"type":"single","title":"...","prompt":"...","good":"..."}],"opening":"one or two sentences to ${name} about tonight"}`;
+}
+
+function morePrompt(name: string, l: Learnt, tonight: ThreadMessage[], done: string[]): string {
+  return `You are Galaxy Trainer, partway through tonight's session with ${name}. There's time for more.
+
+Tonight so far:
+${tonight.map((m) => `[${m.kind}${m.score !== null ? ` ${m.score}/10` : ""}] ${m.text}`).join("\n\n").slice(0, 12000)}
+
+Its weak spots from earlier sessions:
+${list(l.weak)}
+
+Rubric:
+${list(l.program.plan.rubric)}
+
+Drills already done (never repeat or reword these):
+${list(done.slice(-80))}
+
+Design 2 or 3 more drills, harder, aimed at whatever went worst tonight and the weak spots, mostly simulations (a realistic situation over 2 to 4 turns, with a persona you play, hidden facts and twists). Use exact, realistic detail.
+
+Reply with JSON only: {"drills":[{"type":"simulation","title":"unique short title","prompt":"...","persona":"...","world":"...","twists":["..."],"turns":3,"good":"..."}]}`;
 }
 
 function worldPrompt(name: string, drill: Drill, transcript: Turn[], turn: number, turns: number): string {

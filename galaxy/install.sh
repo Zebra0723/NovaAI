@@ -49,8 +49,12 @@ load_agent "$LABEL" "$PLIST"
 TRAINER_PLIST="$HOME/Library/LaunchAgents/ai.galaxy.trainer.plist"
 CLAUDE="$(command -v claude || true)"
 if [ -n "$CLAUDE" ]; then
-  PATHS="$(dirname "$BUN"):$(dirname "$CLAUDE"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-  sed -e "s|__BUN__|$BUN|g" -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" -e "s|__PATH__|$PATHS|g" \
+  # The exact Claude Code the trainer runs, and node's folder too (an npm-installed claude needs it),
+  # since launchd doesn't read your shell's PATH.
+  CLAUDE="$(cd "$(dirname "$CLAUDE")" && pwd -P)/$(basename "$CLAUDE")"
+  NODE_DIR="$(dirname "$(command -v node || echo /usr/bin/node)")"
+  PATHS="$(dirname "$BUN"):$(dirname "$CLAUDE"):$NODE_DIR:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  sed -e "s|__BUN__|$BUN|g" -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" -e "s|__PATH__|$PATHS|g" -e "s|__CLAUDE__|$CLAUDE|g" \
     "$ROOT/launchd/ai.galaxy.trainer.plist" > "$TRAINER_PLIST"
   load_agent ai.galaxy.trainer "$TRAINER_PLIST"
 else

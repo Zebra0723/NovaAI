@@ -203,6 +203,7 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
   const training = link.training;
   if (path === "/v1/training" && method === "GET") return json(training.overview());
   if (path === "/v1/training" && method === "DELETE") return json(training.reset(needBody()));
+  if (path === "/v1/training/status" && method === "PUT") return json(training.setStatus(needBody(), await input()));
   if (path === "/v1/training/threads" && method === "GET") {
     return json(await training.threads(Math.max(Number(url.searchParams.get("after") ?? 0) || 0, 0), wait()));
   }

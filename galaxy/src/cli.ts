@@ -164,7 +164,10 @@ switch (command) {
     report("nova", ["open Nova (it joins while it's running)", existsSync("/Applications/Nova.app") ? "" : "Nova.app isn't in Applications: run galaxy/install-all.sh"].filter(Boolean));
     report("orbit", ["Orbit joins while its menu bar app is running, and is usually quit; that's fine"]);
     report("nebula", ["open Nebula (it joins while it's running)"]);
+    const tstatus = up ? (await link.call<any>("GET", "/v1/training"))?.trainerStatus : null;
     report("trainer", [sh("launchctl list | grep ai.galaxy.trainer") ? "loaded; its log is ~/Library/Application Support/Galaxy/trainer.log" : "not installed: run galaxy/install.sh (it needs Claude Code logged into your plan)"]);
+    if (tstatus && !tstatus.ok) console.log(`    ✗ the trainer can't reach Claude Code: ${tstatus.reason}`);
+    else if (tstatus?.ok) console.log("    ✓ the trainer can reach Claude Code");
     report("zenith", [sh("launchctl list | grep ai.galaxy.zenith") ? "loaded; check ~/Galaxy/Missions/zenith.log" : "not installed: run galaxy/install-all.sh"]);
     break;
   }

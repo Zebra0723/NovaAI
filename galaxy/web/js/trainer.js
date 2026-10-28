@@ -111,6 +111,14 @@ const modeTag = (m) =>
     ? `<span class="mode own" title="Answers its drills itself, as a dry run">${icon("live")}Own answers</span>`
     : `<span class="mode" title="The trainer rehearses this member's answers">${icon("rehearse")}Rehearsed</span>`;
 
+/** Shown when the trainer can't reach Claude Code: no session can run until it can. */
+function alertHTML() {
+  const st = state.training?.trainerStatus;
+  if (!st || st.ok) return "";
+  return `<div class="t-alert">${icon("x")}<div><b>The trainer can't reach Claude Code, so no session can run.</b><p>${esc(st.reason || "No reason given.")}</p>
+    <p class="muted">Check that Claude Code is logged in to your plan (run <code>claude</code> once in Terminal), then reinstall the trainer: <code>galaxy/install.sh</code>. Checked ${esc(ago(st.at))}.</p></div></div>`;
+}
+
 // ------------------------------------------------------------------ overview
 
 function traineeCard(id) {
@@ -155,7 +163,7 @@ const trainer = {
       const latest = all.map((m) => m.scores?.[m.scores.length - 1]?.score).filter((v) => typeof v === "number");
       return latest.length ? pct(latest.reduce((a, b) => a + b, 0) / latest.length) : null;
     })();
-    return `<div class="page trainer-page" data-body="trainer">
+    return `<div class="page trainer-page" data-body="trainer">${alertHTML()}
       <section class="hero trainer-hero">
         <div>
           <div class="label date">Galaxy Trainer · ${esc(new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }))}</div>
@@ -382,6 +390,7 @@ const training = {
     if (!TRAINEES.includes(id)) return `<div class="page"><div class="card empty" style="padding:60px"><b>No trainee called ${esc(id)}</b><a href="#/trainer">Back to Trainer</a></div></div>`;
     focusTraining(id);
     return `<div class="page training-page" data-body="${id}">
+      <div id="t-alert">${alertHTML()}</div>
       <div id="t-head">${headHTML(id)}</div>
       <div class="training-grid section">
         <div class="card coach-thread">
@@ -467,6 +476,8 @@ const training = {
     if (what.has("training") || what.has("data")) {
       const head = $("#t-head");
       if (head) head.innerHTML = headHTML(id);
+      const alert = $("#t-alert");
+      if (alert) alert.innerHTML = alertHTML();
       const aside = $("#t-aside");
       if (aside && !aside.contains(document.activeElement)) aside.innerHTML = asideHTML(id);
       this.drawLive(id);

@@ -15,7 +15,24 @@ import { Coach } from "./coach";
 import { claudeThink } from "./think";
 
 const link = new GalaxyLink("trainer", { name: "Trainer", powers: ["training"], version: "0.2.0" });
-const coach = new Coach({ call: (m, p, b, t) => link.call(m, p, b, t), think: claudeThink() });
+const think = claudeThink();
+const coach = new Coach({ call: (m, p, b, t) => link.call(m, p, b, t), think });
+
+/**
+ * Can the trainer reach Claude Code? Checked at start and before every session, and told
+ * to Link, so a session never starts that can't think, and the Trainer page says why.
+ */
+let checked = { ok: false, at: 0 };
+async function canThink(): Promise<boolean> {
+  if (checked.ok && Date.now() - checked.at < 30 * 60_000) return true;
+  const reply = await think("Reply with the single word: ready", 120_000);
+  const ok = !!reply && /ready/i.test(reply);
+  const reason = ok ? "" : think.lastError || `Claude Code answered "${(reply ?? "").slice(0, 80)}"`;
+  checked = { ok, at: Date.now() };
+  await link.call("PUT", "/v1/training/status", { ok, reason });
+  console.log(ok ? "trainer: Claude Code is working" : `trainer: can't reach Claude Code: ${reason}`);
+  return ok;
+}
 
 type Job = { member: string; trigger: "night" | "test" };
 const queue: Job[] = [];
@@ -39,6 +56,15 @@ async function drain() {
           await link.call("POST", `/v1/training/${job.member}/thread`, {
             kind: "message",
             text: `${name(job.member)} is doing real work right now, so the test session will wait. Ask again when it's done.`,
+          });
+        }
+        continue;
+      }
+      if (!(await canThink())) {
+        if (job.trigger === "test") {
+          await link.call("POST", `/v1/training/${job.member}/thread`, {
+            kind: "message",
+            text: "I can't run a session right now: I can't reach Claude Code. The reason is at the top of the Trainer page.",
           });
         }
         continue;
@@ -80,6 +106,7 @@ async function onInbox(item: LinkInboxItem) {
 if (import.meta.main) {
   console.log(`trainer: overnight sessions in window ${process.env.GALAXY_TRAINER_WINDOW ?? "1-6"}; tests on demand`);
   link.run({ onInbox });
+  setTimeout(() => void canThink(), 5_000);
   setTimeout(nightly, 15_000);
   setInterval(nightly, 5 * 60_000);
   const quit = async () => {

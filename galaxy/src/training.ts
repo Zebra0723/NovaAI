@@ -571,6 +571,25 @@ export class Training {
     return p;
   }
 
+  // ------------------------------------------------------------------ health
+
+  /** The trainer reports whether it can think (reach Claude Code), and why not. */
+  setStatus(who: BodyID, input: { ok?: unknown; reason?: unknown }) {
+    this.needTrainer(who);
+    const status = { ok: input.ok === true, reason: clean(input.reason, 500), at: this.now() };
+    this.db.query("insert into training_meta (key, value) values ('status', ?) on conflict(key) do update set value = excluded.value").run(JSON.stringify(status));
+    return status;
+  }
+
+  status(): { ok: boolean; reason: string; at: number } | null {
+    const r = this.db.query("select value from training_meta where key = 'status'").get() as any;
+    try {
+      return r ? JSON.parse(r.value) : null;
+    } catch {
+      return null;
+    }
+  }
+
   // ---------------------------------------------------------------- overview
 
   /** Everything the Trainer page shows at a glance. */
@@ -583,6 +602,7 @@ export class Training {
       testMinutes: TEST_MINUTES,
       window: { start, end },
       trainerOnline: this.link.isOnline(TRAINER),
+      trainerStatus: this.status(),
       members: TRAINEES.map((member) => {
         const sessions = this.sessions(member, 14);
         const program = this.program(member);

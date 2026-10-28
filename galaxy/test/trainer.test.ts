@@ -162,6 +162,51 @@ describe("a training session", () => {
     expect(s?.summary).toContain("No drills got through");
   });
 
+  test("a session keeps going with new rounds of drills until its time is used", async () => {
+    link.hello("comet", {});
+    let t = 0;
+    let n = 0;
+    const think = fakeThink();
+    const coach = new Coach({
+      call: as("trainer"),
+      think: async (p) => {
+        t += 20_000; // every thought takes twenty seconds
+        if (p.includes("There's time for more")) {
+          n++;
+          return JSON.stringify({ drills: [{ type: "single", title: `Extra ${n}a`, prompt: "x" }, { type: "single", title: `Extra ${n}b`, prompt: "y" }] });
+        }
+        return think(p);
+      },
+      budgetMs: 12 * 60_000,
+      now: () => t,
+    });
+    const s = await coach.session("comet", "2026-10-28");
+    expect(n).toBeGreaterThan(1);
+    expect(t).toBeGreaterThan(10 * 60_000);
+    expect(s!.drills).toBeGreaterThan(4);
+  });
+
+  test("when Claude Code stops answering mid-session, it stops and says why", async () => {
+    link.hello("comet", {});
+    const think = fakeThink();
+    const broken: any = async (p: string) => {
+      if (p.startsWith("Rehearse as")) {
+        broken.lastError = "Claude Code said: not logged in";
+        return null;
+      }
+      return think(p);
+    };
+    const s = await new Coach({ call: as("trainer"), think: broken, budgetMs: 12 * 60_000 }).session("comet", "2026-10-28");
+    expect(s?.status).toBe("failed");
+    expect(s?.summary).toContain("not logged in");
+  });
+
+  test("the trainer's health shows on the Trainer page", async () => {
+    await as("trainer")("PUT", "/v1/training/status", { ok: false, reason: "couldn't start claude" });
+    expect(link.training.overview().trainerStatus).toMatchObject({ ok: false, reason: "couldn't start claude" });
+    expect(await as("comet")("PUT", "/v1/training/status", { ok: true })).toBeNull();
+  });
+
   test("a simulation plays out over turns, the trainer playing the other side", async () => {
     link.hello("comet", {});
     const log: string[] = [];
