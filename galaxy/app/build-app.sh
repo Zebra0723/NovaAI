@@ -16,7 +16,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$(swift build -c release --show-bin-path)/GalaxyLink" "$APP/Contents/MacOS/GalaxyLink"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
-# App icon: AppIcon.icns from the 1024px PNG (redraw it with scripts/make-icon.py).
+# App icon: AppIcon.icns from the 1024px PNG (redraw it with: node scripts/make-icon.mjs).
 ICONSET="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do

@@ -355,11 +355,12 @@ export class Store {
     return row ? rowToTask(row) : null;
   }
 
-  tasks(filter: { status?: string; body?: string } = {}, limit = 100): Task[] {
+  tasks(filter: { status?: string; body?: string; to?: string } = {}, limit = 100): Task[] {
     const where: string[] = [];
     const args: any[] = [];
     if (filter.status) (where.push("status = ?"), args.push(filter.status));
     if (filter.body) (where.push("(sender = ? or target = ?)"), args.push(filter.body, filter.body));
+    if (filter.to) (where.push("target = ?"), args.push(filter.to));
     const sql = `select * from tasks ${where.length ? "where " + where.join(" and ") : ""}
                  order by created_at desc limit ?`;
     return (this.db.query(sql).all(...args, limit) as any[]).map(rowToTask);

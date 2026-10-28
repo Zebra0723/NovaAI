@@ -294,6 +294,30 @@ kbd { font: 600 11px var(--sans); padding: 2px 6px; border-radius: 6px; backgrou
 .member .status { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
 .member .status .when { margin-left: auto; color: var(--ink-3); font-weight: 400; }
 .member.never h3 { color: var(--ink-2); }
+a.member { text-decoration: none; color: inherit; cursor: pointer; }
+.roster .who.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--rule); }
+
+/* ---------------------------------------------------------- member page */
+.avatar.xl { --s: 104px; box-shadow: 0 10px 30px -8px color-mix(in srgb, var(--c) 55%, transparent), inset 0 1px 0 rgba(255, 255, 255, .35); }
+.profile {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) 320px; gap: 28px; align-items: center;
+  padding: 30px 32px; border-radius: var(--r-xl); overflow: hidden; margin-bottom: 14px;
+  background: radial-gradient(420px 240px at 0% 0%, color-mix(in srgb, var(--c) 13%, transparent), transparent 70%), var(--surface);
+}
+.profile h1 { margin: 0; font: 700 40px/1.05 var(--display); letter-spacing: -.035em; }
+.profile p { margin: 6px 0 0; color: var(--ink-2); font-size: 15.5px; }
+.profile .pills { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.sense-pill { display: inline-block; font-size: 12px; font-weight: 650; color: color-mix(in srgb, var(--c) 82%, #000); background: color-mix(in srgb, var(--c) 11%, #fff); padding: 3px 10px; border-radius: 20px; }
+.profile .now { align-self: stretch; padding: 18px 20px; border-radius: 14px; background: var(--raised); border: 1px solid var(--rule); display: flex; flex-direction: column; gap: 8px; }
+.profile .now .label { font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.profile .now .doing b { display: block; font-size: 15px; line-height: 1.4; }
+.profile .now .doing span { display: block; color: var(--ink-2); font-size: 13.5px; margin-top: 4px; }
+.profile .now .bar { height: 4px; border-radius: 4px; background: var(--ground-2); overflow: hidden; margin-top: auto; }
+.profile .now .bar i { display: block; height: 100%; width: 40%; border-radius: 4px; background: var(--c); animation: indeterminate 1.6s var(--ease) infinite; }
+.powers { display: flex; flex-wrap: wrap; gap: 6px; }
+.card .label { font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.intro { margin: 8px 0 0; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+@media (max-width: 1280px) { .profile { grid-template-columns: auto minmax(0, 1fr); } .profile .now { grid-column: 1 / -1; } }
 
 .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
 .stat { padding: 16px 18px; display: grid; grid-template-columns: 1fr auto; align-items: start; }

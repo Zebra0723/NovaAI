@@ -163,6 +163,7 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
       link.store.tasks({
         status: url.searchParams.get("status") ?? undefined,
         body: url.searchParams.get("body") ?? undefined,
+        to: url.searchParams.get("to") ?? undefined,
       }),
     );
   }

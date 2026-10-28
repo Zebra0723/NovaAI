@@ -116,14 +116,14 @@ function memberCard(b) {
         : b.joined
           ? `<span class="muted">Picks up where it left off</span>`
           : `<span class="muted">Joins with an intro when it first connects</span>`;
-  return `<article class="card member ${b.online ? "online" : ""} ${b.joined ? "" : "never"}" data-body="${b.id}">
+  return `<a class="card member ${b.online ? "online" : ""} ${b.joined ? "" : "never"}" data-body="${b.id}" href="#/member/${b.id}">
     <div class="top">${avatar(b.id, "lg", b.online ? "" : "off")}<span class="sense">${esc(meta.sense)}</span></div>
     <h3>${esc(b.name)}</h3>
     <div class="role">${esc(meta.role)}</div>
     <div class="doing">${doing}</div>
     <div class="spark">${sparkline(b.id)}</div>
     <div class="status"><span class="lamp ${b.online ? "on live" : b.joined ? "" : "never"}"></span>${status}<span class="when">${esc(when)}</span></div>
-  </article>`;
+  </a>`;
 }
 
 /** What's going on, in a sentence or two. */
@@ -813,4 +813,94 @@ const system = {
   },
 };
 
-export const VIEWS = { overview, chat, map, handoffs, approvals, memory, activity, system };
+// ------------------------------------------------------------- one member
+
+let memberMemories = { id: "", list: [] };
+
+const member = {
+  title: "Member",
+  deps: ["data", "chat"],
+  render(id) {
+    const b = bodiesInOrder().find((x) => x.id === id);
+    if (!b) return `<div class="page"><div class="card empty" style="padding:60px"><b>No member called ${esc(id)}</b><a href="#/overview">Back to the overview</a></div></div>`;
+    const meta = MEMBERS[id] ?? { sense: "New", role: b.powers.map((p) => p.replaceAll("_", " ")).join(", ") };
+    const tasks = state.tasks.filter((t) => t.from === id || t.to === id);
+    const did = tasks.filter((t) => t.to === id && t.status === "done").length;
+    const asked = tasks.filter((t) => t.from === id).length;
+    const msgs = state.chat.filter((m) => m.body === id);
+    if (memberMemories.id !== id) {
+      memberMemories = { id, list: [] };
+      api.memories().then((list) => {
+        memberMemories = { id, list: (list ?? []).filter((m) => m.source === id) };
+        const box = $("#member-mem");
+        if (box) box.textContent = memberMemories.list.length;
+      }).catch(() => {});
+    }
+    const events = state.events.filter((e) => e.body === id).slice(-12).reverse();
+    const intro = state.chat.find((m) => m.body === id && m.kind === "intro");
+    const status = b.online ? "Running" : b.joined ? "Not running" : "Hasn't joined yet";
+    return `<div class="page" data-body="${id}">
+      <section class="card profile">
+        ${avatar(id, "xl", b.online ? "" : "off")}
+        <div class="who">
+          <div class="eyebrow" style="color:inherit"><span class="sense-pill">${esc(meta.sense)}</span></div>
+          <h1>${esc(b.name)}</h1>
+          <p>${esc(meta.role)}</p>
+          <div class="pills">
+            <span class="pill"><span class="lamp ${b.online ? "on live" : b.joined ? "" : "never"}"></span>${status}${b.online ? "" : b.joined ? ` · seen ${esc(ago(b.lastSeen))}` : ""}</span>
+            ${b.version ? `<span class="pill">Version ${esc(b.version)}</span>` : ""}
+            <a class="pill" href="#/chat" data-chat-filter="${id}">See ${esc(b.name)}'s messages</a>
+          </div>
+        </div>
+        <div class="now">
+          <div class="label">Right now</div>
+          ${
+            b.working
+              ? `<div class="doing"><b>${esc(b.working.title)}</b>${b.working.progress ? `<span>${esc(b.working.progress)}</span>` : ""}</div><div class="bar"><i></i></div>`
+              : `<div class="doing"><span>${b.online ? "Free, ready for anything." : id === "orbit" ? "Quiet until you talk to it." : "Not running."}</span></div>`
+          }
+        </div>
+      </section>
+
+      <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+        <div class="card stat"><div class="k">Messages in chat</div><span class="ico">${icon("chatline")}</span><div class="v">${msgs.length}</div><div class="s">in Galaxy Chat</div></div>
+        <div class="card stat"><div class="k">Work finished</div><span class="ico">${icon("done")}</span><div class="v">${did}</div><div class="s">handed to ${esc(b.name)}</div></div>
+        <div class="card stat"><div class="k">Work handed on</div><span class="ico">${icon("flight")}</span><div class="v">${asked}</div><div class="s">to other members</div></div>
+        <div class="card stat"><div class="k">Memories saved</div><span class="ico">${icon("memory")}</span><div class="v" id="member-mem">${memberMemories.list.length}</div><div class="s">shared with everyone</div></div>
+      </div>
+
+      <div class="split section">
+        <div>
+          <div class="section-head"><h2>Recent activity</h2></div>
+          <div class="card timeline">${
+            events.length
+              ? events.map((e) => `<div class="event" data-body="${e.body}"><span class="time">${esc(shortDate(e.at))}</span>${avatar(e.body, "xs")}<span class="what">${esc(e.summary)}</span><span class="chip">${esc(KIND[e.kind] ?? e.kind)}</span></div>`).join("")
+              : `<div class="empty">Nothing yet.</div>`
+          }</div>
+        </div>
+        <div>
+          <div class="section-head"><h2>Powers</h2></div>
+          <div class="card pad"><div class="powers">${
+            b.powers.length ? b.powers.map((p) => `<span class="chip tint">${esc(p.replaceAll("_", " "))}</span>`).join("") : `<span class="muted">None yet.</span>`
+          }</div>
+          ${intro ? `<div class="label" style="margin-top:18px">How ${esc(b.name)} introduced itself</div><p class="intro">${richText(intro.text)}</p>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="section"><div class="section-head"><h2>Handoffs</h2><a class="more" href="#/handoffs">All handoffs</a></div>
+        <div class="card" style="padding:4px 20px">${
+          tasks.length
+            ? tasks.slice(0, 8).map((t) => `<div class="flight" data-task="${t.id}" style="cursor:pointer">${route(t.from, t.to)}<span class="t">${esc(t.title)}</span>${statusChip(t.status)}<span class="muted" style="font-size:12px">${esc(ago(t.updatedAt))}</span></div>`).join("")
+            : `<div class="empty">No handoffs yet.</div>`
+        }</div></div>
+    </div>`;
+  },
+};
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-chat-filter]");
+  if (el) chatFilter = el.dataset.chatFilter;
+});
+
+export const VIEWS = { overview, chat, map, handoffs, approvals, memory, activity, system, member };

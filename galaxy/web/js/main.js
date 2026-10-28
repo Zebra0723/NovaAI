@@ -39,23 +39,27 @@ document.body.innerHTML = `
 
 let current = null;
 
+/** "#/chat" is the chat page; "#/member/nova" is Nova's own page. */
 function currentRoute() {
-  const id = location.hash.replace(/^#\/?/, "").split("?")[0];
-  return VIEWS[id] ? id : "overview";
+  const [id, param = ""] = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
+  return VIEWS[id] ? [id, param] : ["overview", ""];
 }
+let param = "";
 
 function show() {
-  const id = currentRoute();
+  const [id, arg] = currentRoute();
   const view = VIEWS[id];
   current = id;
+  param = arg;
   closeDrawer();
   const box = $("#view");
   box.className = view.flush ? "view flush" : "view";
-  box.innerHTML = view.render();
+  box.innerHTML = view.render(param);
   box.scrollTop = 0;
   view.mount?.(box);
-  document.title = `${view.title} · Galaxy Link`;
+  document.title = `${id === "member" ? param.charAt(0).toUpperCase() + param.slice(1) : view.title} · Galaxy Link`;
   for (const a of document.querySelectorAll("[data-nav]")) a.classList.toggle("on", a.dataset.nav === id);
+  for (const a of document.querySelectorAll(".roster .who")) a.classList.toggle("on", id === "member" && a.dataset.body === param);
 }
 
 function chrome() {
@@ -70,7 +74,7 @@ function chrome() {
   $("#roster").innerHTML = [...bodies]
     .sort((a, b) => (order.indexOf(a.id) + 99) % 99 - (order.indexOf(b.id) + 99) % 99)
     .map(
-      (b) => `<a class="who ${b.online ? "" : "off"}" href="#/chat" data-body="${b.id}">
+      (b) => `<a class="who ${b.online ? "" : "off"}${current === "member" && param === b.id ? " on" : ""}" href="#/member/${b.id}" data-body="${b.id}">
         ${glyph(b.id, "glyph-sm")}${esc(b.name)}
         <span class="state"><span class="lamp ${b.online ? "on" : b.joined ? "" : "never"}"></span></span></a>`,
     )
@@ -130,7 +134,7 @@ subscribe((what) => {
     drawn = sig;
     const box = $("#view");
     const top = box.scrollTop;
-    box.innerHTML = view.render().replace('class="page"', 'class="page" style="animation:none"');
+    box.innerHTML = view.render(param).replace('class="page"', 'class="page" style="animation:none"');
     view.mount?.(box);
     box.scrollTop = top;
   }
