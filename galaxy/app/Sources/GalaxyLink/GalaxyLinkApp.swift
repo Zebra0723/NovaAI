@@ -139,7 +139,7 @@ private extension NSMenu {
 
 @MainActor
 final class LinkWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-    static let ground = NSColor(red: 0.957, green: 0.961, blue: 0.973, alpha: 1) // #F4F5F8
+    static let ground = NSColor(red: 0.973, green: 0.969, blue: 0.957, alpha: 1) // #F8F7F4
 
     private var webView: WKWebView!
     private let content = WKUserContentController()
@@ -315,22 +315,22 @@ enum OfflinePage {
         <!doctype html><html><head><meta charset="utf-8"><style>
         :root { color-scheme: light; }
         html, body { height: 100%; margin: 0; }
-        body { background: #f4f5f8; color: #0d1017; font: 14px/1.55 -apple-system, BlinkMacSystemFont, sans-serif;
+        body { background: #f8f7f4; color: #141413; font: 14px/1.55 -apple-system, BlinkMacSystemFont, sans-serif;
                display: grid; place-items: center; -webkit-font-smoothing: antialiased; -webkit-user-select: none; }
         .drag { position: fixed; top: 0; left: 0; right: 0; height: 46px; -webkit-app-region: drag; }
         .box { text-align: center; max-width: 440px; padding: 24px; }
-        h1 { font: 600 24px/1.2 -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: -.02em; margin: 22px 0 8px; }
-        p { color: #4a5160; margin: 0 0 22px; }
-        button { height: 36px; padding: 0 18px; border-radius: 9px; border: 1px solid #0d1017; background: #0d1017;
+        h1 { font: 400 40px/1.05 "New York", ui-serif, Georgia, serif; letter-spacing: -.02em; margin: 26px 0 12px; }
+        p { color: #57534c; margin: 0 0 24px; font-size: 15px; line-height: 1.6; }
+        button { height: 36px; padding: 0 18px; border-radius: 9px; border: 1px solid #141413; background: #141413;
                  color: #fff; font: 600 13px -apple-system, sans-serif; cursor: pointer; }
         button:hover { background: #262b36; }
-        #status { margin-top: 16px; color: #6b7280; font-size: 12.5px; min-height: 20px; }
+        #status { margin-top: 18px; color: #8a857c; font: 12px ui-monospace, "SF Mono", monospace; min-height: 20px; }
         </style></head><body><div class="drag"></div><div class="box">
-        <svg width="72" height="72" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="8.5" fill="#fff" stroke="#e6e8ee"/>
-        <circle cx="16" cy="16" r="9.6" fill="none" stroke="#d9dce4"/><circle cx="16" cy="16" r="3.6" fill="#0d1017"/>
-        <circle cx="16" cy="6.4" r="2.4" fill="#e48a00"/><circle cx="25.13" cy="13.03" r="2.4" fill="#e5483b"/>
-        <circle cx="21.64" cy="23.77" r="2.4" fill="#7259f5"/><circle cx="10.36" cy="23.77" r="2.4" fill="#0ea887"/>
-        <circle cx="6.87" cy="13.03" r="2.4" fill="#2c74f0"/></svg>
+        <svg width="64" height="64" viewBox="0 0 32 32"><circle cx="16" cy="16" r="10" fill="none" stroke="#141413" stroke-opacity=".22"/>
+        <circle cx="16" cy="16" r="3.4" fill="#141413"/>
+        <circle cx="16" cy="6" r="2.3" fill="#d97706"/><circle cx="25.51" cy="12.91" r="2.3" fill="#dc2626"/>
+        <circle cx="21.88" cy="24.09" r="2.3" fill="#6d4aff"/><circle cx="10.12" cy="24.09" r="2.3" fill="#059669"/>
+        <circle cx="6.49" cy="12.91" r="2.3" fill="#2563eb"/></svg>
         <h1>Galaxy Link isn't running</h1>
         <p>The members can't reach each other until it starts. It normally starts on its own when you log in.</p>
         <button onclick="window.webkit.messageHandlers.galaxy.postMessage('start')">Start Galaxy Link</button>

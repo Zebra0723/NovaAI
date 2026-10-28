@@ -15,7 +15,8 @@ const byId = (id) => bodiesInOrder().find((b) => b.id === id);
 
 function greeting() {
   const h = new Date().getHours();
-  return h < 5 ? "Late night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  const [a, b] = h < 5 ? ["Late", "night"] : h < 12 ? ["Good", "morning"] : h < 18 ? ["Good", "afternoon"] : ["Good", "evening"];
+  return `${a} <em>${b}</em>`;
 }
 
 function route(from, to, size = "xs") {
@@ -96,8 +97,9 @@ function sparkline(id) {
   const max = Math.max(1, ...bins);
   const bars = bins
     .map((v, i) => {
-      const h = v ? 4 + (v / max) * 20 : 2;
-      return `<rect x="${i * 10 + 1}" y="${26 - h}" width="7" height="${h}" rx="2" fill="${hex(id)}" fill-opacity="${v ? 0.25 + (v / max) * 0.6 : 0.12}"/>`;
+      if (!v) return `<rect x="${i * 10 + 1}" y="25" width="7" height="1" fill="#e9e6df"/>`;
+      const h = 4 + (v / max) * 20;
+      return `<rect x="${i * 10 + 1}" y="${26 - h}" width="7" height="${h}" rx="1.5" fill="${hex(id)}" fill-opacity="${0.35 + (v / max) * 0.55}"/>`;
     })
     .join("");
   return `<svg viewBox="0 0 120 26" preserveAspectRatio="none" aria-label="Activity over the last 12 hours">${bars}</svg>`;
@@ -224,9 +226,9 @@ const overview = {
     const stat = (k, v, sub, ico, attention = false) =>
       `<div class="card stat ${attention ? "attention" : ""}"><div class="k">${k}</div><span class="ico">${icon(ico)}</span><div class="v">${v}</div><div class="s">${sub}</div></div>`;
     return `<div class="page">
-      <section class="card hero">
+      <section class="hero">
         <div>
-          <div class="date">${esc(new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }))}</div>
+          <div class="label date">${esc(new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }))}</div>
           <h1>${greeting()}</h1>
           <div class="story">${story()}</div>
           <div class="pills">
@@ -421,10 +423,10 @@ function mapSVG({ compact = false, uid = "m" } = {}) {
   const arcs = state.tasks.filter(
     (t) => pos[t.from] && pos[t.to] && (t.status === "queued" || t.status === "claimed" || now - t.updatedAt < 15 * 60_000),
   );
-  const nodeR = compact ? 54 : 44;
+  const nodeR = compact ? 46 : 34;
 
   // The orbit the members sit on.
-  let lines = `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="#e3e6ec" stroke-width="${compact ? 3 : 1.4}"/>`;
+  let lines = `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="#e9e6df" stroke-width="${compact ? 2 : 1}"/>`;
   let defs = "";
   for (const b of bodies) {
     const p = pos[b.id];
@@ -437,7 +439,7 @@ function mapSVG({ compact = false, uid = "m" } = {}) {
       y2 = p.y - (dy / d) * (nodeR + 6);
     defs += `<linearGradient id="${uid}-s-${b.id}" gradientUnits="userSpaceOnUse" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">
       <stop offset="0" stop-color="${color(b.id)}" stop-opacity=".1"/><stop offset="1" stop-color="${color(b.id)}" stop-opacity=".75"/></linearGradient>`;
-    lines += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${b.online ? `url(#${uid}-s-${b.id})` : "#d9dce4"}" stroke-width="${compact ? 4 : 2}" stroke-linecap="round" ${
+    lines += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${b.online ? `url(#${uid}-s-${b.id})` : "#e9e6df"}" stroke-width="${compact ? 2.5 : 1.25}" stroke-linecap="round" ${
       b.online ? "" : `stroke-dasharray="${compact ? "6 10" : "3 6"}"`
     }/>`;
   }
@@ -458,10 +460,10 @@ function mapSVG({ compact = false, uid = "m" } = {}) {
     defs += `<linearGradient id="${uid}-g-${i}" gradientUnits="userSpaceOnUse" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}">
       <stop offset="0" stop-color="${color(t.from)}"/><stop offset="1" stop-color="${color(t.to)}"/></linearGradient>`;
     const d = `M${a.x.toFixed(1)} ${a.y.toFixed(1)} Q${qx.toFixed(1)} ${qy.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
-    const w = compact ? 5 : 2.4;
+    const w = compact ? 3.5 : 1.75;
     if (t.status === "claimed") {
       flows += `<path id="${id}" d="${d}" fill="none" stroke="url(#${uid}-g-${i})" stroke-width="${w}" stroke-linecap="round"/>
-        <circle r="${compact ? 11 : 6}" fill="#fff" stroke="${color(t.to)}" stroke-width="${compact ? 5 : 3}" filter="url(#${uid}-glow)"><animateMotion dur="2.6s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines=".4 0 .2 1"><mpath href="#${id}"/></animateMotion></circle>`;
+        <circle r="${compact ? 8 : 4.5}" fill="${color(t.to)}" stroke="#fff" stroke-width="${compact ? 3 : 2}"><animateMotion dur="2.6s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines=".4 0 .2 1"><mpath href="#${id}"/></animateMotion></circle>`;
     } else if (t.status === "queued") {
       flows += `<path d="${d}" fill="none" stroke="url(#${uid}-g-${i})" stroke-width="${w * 0.8}" stroke-opacity=".75" stroke-dasharray="${compact ? "10 12" : "5 7"}" stroke-linecap="round" class="dash"/>`;
     } else {
@@ -475,32 +477,31 @@ function mapSVG({ compact = false, uid = "m" } = {}) {
     const p = pos[b.id];
     const c = color(b.id);
     const status = b.online ? (b.working ? "Working" : "Running") : b.joined ? "Not running" : "Not joined";
-    const g = compact ? 50 : 38;
+    const g = compact ? 44 : 30;
     nodes += `<g class="node ${b.online ? "online" : ""}" transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})">
-      ${b.online ? `<circle class="node-ring" r="${nodeR + 6}" fill="none" stroke="${c}" stroke-width="${compact ? 4 : 2}"/>` : ""}
-      <circle r="${nodeR}" fill="${b.online ? `url(#${uid}-ball-${b.id})` : "#eef0f4"}" stroke="${b.online ? "none" : "#d9dce4"}" stroke-width="2" filter="url(#${uid}-shadow)"/>
-      <svg x="${-g / 2}" y="${-g / 2}" width="${g}" height="${g}" viewBox="0 0 24 24" style="color:${b.online ? "#fff" : "#9aa1ad"}">${glyph(b.id).replace(/^<svg[^>]*>|<\/svg>$/g, "")}</svg>
+      ${b.online ? `<circle class="node-ring" r="${nodeR + 7}" fill="none" stroke="${c}" stroke-width="${compact ? 2.5 : 1.25}"/>` : ""}
+      <circle r="${nodeR}" fill="#ffffff" stroke="${b.online ? c : "#dcd8cf"}" stroke-width="${compact ? 3 : 1.5}" filter="url(#${uid}-shadow)"/>
+      <circle r="${nodeR - (compact ? 7 : 5)}" fill="${c}" fill-opacity="${b.online ? 0.07 : 0}"/>
+      <svg x="${-g / 2}" y="${-g / 2}" width="${g}" height="${g}" viewBox="0 0 24 24" style="color:${b.online ? c : "#b3ada2"}">${glyph(b.id).replace(/^<svg[^>]*>|<\/svg>$/g, "")}</svg>
       ${
         compact
           ? ""
-          : `<text y="${nodeR + 26}" text-anchor="middle" fill="#0d1017" font-size="15" font-weight="650" stroke="#fff" stroke-width="5" paint-order="stroke" style="font-family:var(--display)">${esc(b.name)}</text>
-      <text y="${nodeR + 44}" text-anchor="middle" fill="${b.online ? c : "#6b7280"}" font-size="12" font-weight="600" stroke="#fff" stroke-width="4" paint-order="stroke" style="font-family:var(--sans)">${status}</text>`
+          : `<text y="${nodeR + 30}" text-anchor="middle" fill="#141413" font-size="22" stroke="#f8f7f4" stroke-width="6" paint-order="stroke" style="font-family:var(--serif)">${esc(b.name)}</text>
+      <text y="${nodeR + 48}" text-anchor="middle" fill="${b.online ? c : "#8a857c"}" font-size="10" letter-spacing="1.2" stroke="#f8f7f4" stroke-width="5" paint-order="stroke" style="font-family:var(--mono)">${status.toUpperCase()}</text>`
       }
     </g>`;
-    defs += `<radialGradient id="${uid}-ball-${b.id}" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="${c}" stop-opacity=".7"/><stop offset=".55" stop-color="${c}"/><stop offset="1" stop-color="${c}"/></radialGradient>`;
   }
 
   const atMac = state.overview?.presence?.atMac;
-  const coreR = compact ? 70 : 48;
+  const coreR = compact ? 52 : 44;
   const core = `<g transform="translate(${cx} ${cy})">
-    <circle class="core-ring" r="${coreR + 30}" fill="none" stroke="#d9dce4" stroke-width="${compact ? 3 : 1.4}" stroke-dasharray="${compact ? "4 14" : "2 7"}"/>
-    <circle class="core-ring r2" r="${coreR + 15}" fill="none" stroke="#e6e8ee" stroke-width="${compact ? 3 : 1.4}" stroke-dasharray="${compact ? "26 16" : "14 10"}"/>
-    <circle r="${coreR}" fill="url(#${uid}-core)" filter="url(#${uid}-shadow)"/>
+    <circle class="core-ring" r="${coreR + 30}" fill="none" stroke="#dcd8cf" stroke-width="${compact ? 2 : 1}" stroke-dasharray="${compact ? "3 12" : "2 8"}"/>
+    <circle r="${coreR}" fill="#141413" filter="url(#${uid}-shadow)"/>
     ${
       compact
-        ? ""
-        : `<text y="-1" text-anchor="middle" fill="#fff" font-size="13" font-weight="700" letter-spacing="2.5" style="font-family:var(--sans)">LINK</text>
-    <text y="16" text-anchor="middle" fill="#aab1bd" font-size="10.5" font-weight="500" style="font-family:var(--sans)">${atMac ? "You're here" : "You're away"}</text>`
+        ? `<circle r="${coreR * 0.18}" fill="#f8f7f4"/>`
+        : `<text y="2" text-anchor="middle" fill="#f8f7f4" font-size="24" style="font-family:var(--serif)">Link</text>
+    <text y="20" text-anchor="middle" fill="#a8a399" font-size="9" letter-spacing="1.2" style="font-family:var(--mono)">${atMac ? "YOU'RE HERE" : "YOU'RE AWAY"}</text>`
     }
   </g>`;
 
@@ -508,7 +509,7 @@ function mapSVG({ compact = false, uid = "m" } = {}) {
     <defs>${defs}
       <radialGradient id="${uid}-core" cx=".35" cy=".3" r=".9"><stop offset="0" stop-color="#4b5263"/><stop offset=".6" stop-color="#151922"/><stop offset="1" stop-color="#0d1017"/></radialGradient>
       <filter id="${uid}-glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-      <filter id="${uid}-shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="${compact ? 8 : 4}" stdDeviation="${compact ? 10 : 6}" flood-color="#101828" flood-opacity=".16"/></filter>
+      <filter id="${uid}-shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="${compact ? 6 : 3}" stdDeviation="${compact ? 9 : 5}" flood-color="#141413" flood-opacity=".10"/></filter>
     </defs>
     ${lines}${flows}${core}${nodes}
   </svg>`;
@@ -580,7 +581,7 @@ const handoffs = {
     ];
     const card = (t) => `<button class="task" data-task="${t.id}" data-body="${t.to}">
       <div class="title">${esc(t.title)}</div>
-      <div class="route">${avatar(t.from, "xs")}<span class="nm">${esc(nameOf(t.from))}</span>${icon("arrow", "arrow")}${avatar(t.to, "xs")}<span class="nm">${esc(nameOf(t.to))}</span><span class="when">${esc(ago(t.updatedAt))}</span></div>
+      <div class="route">${avatar(t.from, "xs")}${avatar(t.to, "xs")}<span class="nm">${esc(nameOf(t.from))} to ${esc(nameOf(t.to))}</span><span class="when">${esc(ago(t.updatedAt))}</span></div>
       ${t.status === "claimed" && t.progress ? `<div class="note">${esc(t.progress)}</div>` : ""}
       ${(t.status === "done" || t.status === "failed") && t.result ? `<div class="note">${esc(t.result)}</div>` : ""}
       ${t.status === "claimed" ? `<div class="bar"><i></i></div>` : ""}
