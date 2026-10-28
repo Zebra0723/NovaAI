@@ -29,15 +29,17 @@ find_repo() {
       *"zebra0723/$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"|*"zebra0723/$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]').git")
         printf '%s\n' "$dir"; return 0 ;;
     esac
-  done < <(find "$HOME" -maxdepth 4 -type d -name .git \
+  done < <(find "$HOME" -maxdepth 4 -name .git \
              -not -path "*/Library/*" -not -path "*/node_modules/*" -not -path "*/.Trash/*" 2>/dev/null)
   return 1
 }
 
 # checkout NAME BRANCH: finds (or downloads) the repo and brings BRANCH up to date. Prints its folder.
 checkout() {
-  local name="$1" branch="$2" dir
-  if ! dir="$(find_repo "$name")"; then
+  local name="$1" branch="$2" dir="${3:-}"
+  if [ -n "$dir" ] && git -C "$dir" rev-parse >/dev/null 2>&1; then
+    dir="$(git -C "$dir" rev-parse --show-toplevel)"
+  elif ! dir="$(find_repo "$name")"; then
     mkdir -p "$HOME_DIR"
     dir="$HOME_DIR/$name"
     git clone -q "https://github.com/Zebra0723/$name" "$dir" >&2 || return 1
@@ -63,7 +65,9 @@ say "Nova"
 step "Nova app" "$HERE/scripts/build-app.sh" --install
 
 say "Comet"
-if COMET="$(checkout CometAI claude/nice-knuth-5l429p)"; then
+# The Comet that's actually running, if launchd knows where it is.
+LIVE_COMET="$(/usr/libexec/PlistBuddy -c 'Print :WorkingDirectory' "$HOME/Library/LaunchAgents/com.imessage.server.plist" 2>/dev/null || true)"
+if COMET="$(checkout CometAI claude/nice-knuth-5l429p "$LIVE_COMET")"; then
   ok "Comet is in $COMET"
   step "Comet's packages" bash -c "cd '$COMET' && bun install --silent"
   for label in com.imessage.server com.imessage.relay; do
