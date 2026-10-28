@@ -4,6 +4,7 @@ import { brandMark, glyph, icon } from "./marks.js";
 import { start, state, subscribe } from "./state.js";
 import { $, ago, esc } from "./util.js";
 import { closeDrawer, VIEWS } from "./views.js";
+import { closePalette, openPalette } from "./palette.js";
 
 const NAV = [
   ["overview", "Overview"],
@@ -22,6 +23,7 @@ document.body.innerHTML = `
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">${brandMark()}<div><div class="brand-name">Galaxy Link</div><div class="brand-sub">GalaxyAI</div></div></div>
+      <button class="search-trigger" id="search-trigger">${icon("search")}Search<kbd>⌘K</kbd></button>
       <nav class="nav" id="nav">${NAV.map(
         ([id, label], i) => `<a href="#/${id}" data-nav="${id}">${icon(ICON_FOR[id])}<span>${label}</span><span class="count" hidden></span><span class="key">⌘${i + 1}</span></a>`,
       ).join("")}</nav>
@@ -76,7 +78,7 @@ function chrome() {
 
   const atMac = o?.presence?.atMac;
   $("#presence").innerHTML = o
-    ? `<span class="lamp on" style="--c:${atMac ? "var(--good)" : "var(--zenith)"}"></span><div><b>${atMac ? "You're at the Mac" : "You're away"}</b><span>${
+    ? `<span class="lamp on" style="--c:${atMac ? "var(--good)" : "var(--accent)"}"></span><div><b>${atMac ? "You're at the Mac" : "You're away"}</b><span>${
         atMac ? "Results show on the screen." : "Results go to your phone through Comet."
       }</span></div>`
     : "";
@@ -103,12 +105,29 @@ function chrome() {
   }
 }
 
+/** What the pages are drawn from, minus what changes every second, so a page redraws only when it should. */
+function signature() {
+  const o = state.overview;
+  return JSON.stringify([
+    o && { ...o, now: 0, presence: o.presence?.atMac },
+    state.tasks.map((t) => [t.id, t.status, t.updatedAt, t.progress]),
+    state.events.length && state.events[state.events.length - 1].id,
+    state.approvals.map((a) => [a.id, a.status]),
+    state.pending.version,
+    state.chat.length && state.chat[state.chat.length - 1].id,
+    Math.floor(Date.now() / 60_000), // relative times ("3 min ago") move on once a minute
+  ]);
+}
+let drawn = "";
+
 subscribe((what) => {
   chrome();
   const view = VIEWS[current];
   if (!view) return;
+  const sig = signature();
   if (view.update) view.update(what);
-  else if (view.deps?.some((d) => what.has(d))) {
+  else if (view.deps?.some((d) => what.has(d)) && sig !== drawn) {
+    drawn = sig;
     const box = $("#view");
     const top = box.scrollTop;
     box.innerHTML = view.render().replace('class="page"', 'class="page" style="animation:none"');
@@ -117,8 +136,17 @@ subscribe((what) => {
   }
 });
 
-window.addEventListener("hashchange", show);
+window.addEventListener("hashchange", () => {
+  drawn = "";
+  show();
+});
+const openSearch = () => openPalette(NAV.map(([id, label]) => [id, label, ICON_FOR[id]]));
+$("#search-trigger").onclick = openSearch;
 document.addEventListener("keydown", (e) => {
+  if (e.metaKey && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    return $(".palette-scrim") ? closePalette() : openSearch();
+  }
   if (e.key === "Escape") closeDrawer();
   if (e.metaKey && /^[1-8]$/.test(e.key)) {
     e.preventDefault();

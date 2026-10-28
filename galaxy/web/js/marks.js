@@ -10,8 +10,8 @@ export const MEMBERS = {
 };
 export const ORDER = ["comet", "orbit", "nova", "nebula", "zenith"];
 /** The member colours as plain values, for SVG attributes (which can't read CSS variables). */
-export const HEX = { comet: "#ffb547", orbit: "#ff5a4d", nova: "#b9a6ff", nebula: "#4fe0c2", zenith: "#6fa8ff", you: "#f3f4f6" };
-export const hex = (id) => HEX[id] ?? "#c7ccd6";
+export const HEX = { comet: "#e48a00", orbit: "#e5483b", nova: "#7259f5", nebula: "#0ea887", zenith: "#2c74f0", you: "#0d1017" };
+export const hex = (id) => HEX[id] ?? "#7b8494";
 
 const GLYPHS = {
   // A head with a tapering tail.
@@ -51,12 +51,14 @@ export function brandMark(cls = "brand-mark") {
   const dots = colors
     .map((c, i) => {
       const a = (-90 + i * 72) * (Math.PI / 180);
-      return `<circle cx="${(16 + 11 * Math.cos(a)).toFixed(2)}" cy="${(16 + 11 * Math.sin(a)).toFixed(2)}" r="2.6" fill="${c}"/>`;
+      return `<circle cx="${(16 + 9.6 * Math.cos(a)).toFixed(2)}" cy="${(16 + 9.6 * Math.sin(a)).toFixed(2)}" r="2.4" fill="${c}"/>`;
     })
     .join("");
   return `<svg class="${cls}" viewBox="0 0 32 32" aria-hidden="true">
-    <circle cx="16" cy="16" r="11" fill="none" stroke="#2a2f3b" stroke-width="1"/>
-    <circle cx="16" cy="16" r="3.4" fill="#f3f4f6"/>${dots}</svg>`;
+    <defs><radialGradient id="bm-core" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#4b5263"/><stop offset="1" stop-color="#0d1017"/></radialGradient></defs>
+    <rect x="1" y="1" width="30" height="30" rx="8.5" fill="#ffffff" stroke="#e6e8ee"/>
+    <circle cx="16" cy="16" r="9.6" fill="none" stroke="#d9dce4" stroke-width="1"/>
+    <circle cx="16" cy="16" r="3.6" fill="url(#bm-core)"/>${dots}</svg>`;
 }
 
 const ICONS = {
@@ -79,6 +81,10 @@ const ICONS = {
   web: `<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.6 3.5 5.4 3.5 8.5s-1.1 5.9-3.5 8.5c-2.4-2.6-3.5-5.4-3.5-8.5S9.6 6.1 12 3.5Z"/>`,
   mail: `<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/>`,
   down: `<path d="M12 5v14m0 0-6-6m6 6 6-6"/>`,
+  chatline: `<path d="M5 6h14M5 11h10M5 16h7"/>`,
+  done: `<circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5"/>`,
+  flight: `<path d="M4 17c4 0 5-10 9-10s4 6 7 6"/><circle cx="20" cy="13" r="1.6"/>`,
+  hand: `<path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12m0-6.5V5a1.5 1.5 0 0 1 3 0v7m0-5.5a1.5 1.5 0 0 1 3 0V14c0 4-2.5 6-6 6-2.7 0-4.3-1.3-5.6-3.5L4.3 13a1.5 1.5 0 0 1 2.6-1.5L8 13"/>`,
 };
 
 export function icon(name, cls = "") {

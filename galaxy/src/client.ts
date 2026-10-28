@@ -139,8 +139,8 @@ export class GalaxyLink {
   }
 
   /** A block for the system prompt: memory, what the other bodies did, who's running. */
-  async context(): Promise<string | null> {
-    return (await this.call<{ text: string }>("GET", "/v1/context"))?.text ?? null;
+  async context(timeoutMs = 10_000): Promise<string | null> {
+    return (await this.call<{ text: string }>("GET", "/v1/context", undefined, timeoutMs))?.text ?? null;
   }
 
   /** Tells the other bodies what this one just did, so they can pick up where it left off. */
@@ -149,8 +149,8 @@ export class GalaxyLink {
   }
 
   /** Hands work to whichever body has `power` (or to `to`). Only for powers this body lacks. */
-  handoff(task: { power?: string; to?: string; title: string; instructions: string; replyTo?: string }) {
-    return this.call<LinkTask>("POST", "/v1/tasks", task);
+  handoff(task: { power?: string; to?: string; title: string; instructions: string; replyTo?: string }, timeoutMs = 10_000) {
+    return this.call<LinkTask>("POST", "/v1/tasks", task, timeoutMs);
   }
 
   task(id: string) {
@@ -180,8 +180,18 @@ export class GalaxyLink {
   }
 
   /** Answers another body's approval. */
-  decide(id: string, approve: boolean, via = "text") {
-    return this.call<LinkApproval>("POST", `/v1/approvals/${id}/decide`, { decision: approve ? "approve" : "reject", via });
+  decide(id: string, approve: boolean, via = "text", timeoutMs = 10_000) {
+    return this.call<LinkApproval>("POST", `/v1/approvals/${id}/decide`, { decision: approve ? "approve" : "reject", via }, timeoutMs);
+  }
+
+  /** Whether the user is at the Mac, which decides where results go. */
+  presence(timeoutMs = 10_000) {
+    return this.call<{ idleSeconds: number | null; atMac: boolean }>("GET", "/v1/presence", undefined, timeoutMs);
+  }
+
+  /** Approvals waiting on the user, and a version that changes whenever that list does. */
+  pendingApprovals(timeoutMs = 10_000) {
+    return this.call<{ version: number; pending: LinkApproval[] }>("GET", "/v1/approvals/pending", undefined, timeoutMs);
   }
 
   /** A message for the user, delivered wherever they are. Only ever for something they asked for. */
@@ -210,7 +220,6 @@ export class GalaxyLink {
       await pause(30_000);
       return ok !== null;
     });
-    void this.hello();
     if (handlers.onTask) {
       const onTask = handlers.onTask;
       void loop(async () => {

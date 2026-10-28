@@ -139,7 +139,7 @@ private extension NSMenu {
 
 @MainActor
 final class LinkWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-    static let ground = NSColor(red: 0.027, green: 0.031, blue: 0.043, alpha: 1) // #07080B
+    static let ground = NSColor(red: 0.957, green: 0.961, blue: 0.973, alpha: 1) // #F4F5F8
 
     private var webView: WKWebView!
     private let content = WKUserContentController()
@@ -155,7 +155,7 @@ final class LinkWindowController: NSWindowController, WKNavigationDelegate, WKUI
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = false
         window.backgroundColor = Self.ground
-        window.appearance = NSAppearance(named: .darkAqua)
+        window.appearance = NSAppearance(named: .aqua)
         window.minSize = NSSize(width: 980, height: 640)
         window.tabbingMode = .disallowed
         window.center()
@@ -313,23 +313,24 @@ enum OfflinePage {
     static func html(status: String) -> String {
         """
         <!doctype html><html><head><meta charset="utf-8"><style>
-        :root { color-scheme: dark; }
+        :root { color-scheme: light; }
         html, body { height: 100%; margin: 0; }
-        body { background: #07080b; color: #f3f4f6; font: 14px/1.55 -apple-system, BlinkMacSystemFont, sans-serif;
+        body { background: #f4f5f8; color: #0d1017; font: 14px/1.55 -apple-system, BlinkMacSystemFont, sans-serif;
                display: grid; place-items: center; -webkit-font-smoothing: antialiased; -webkit-user-select: none; }
         .drag { position: fixed; top: 0; left: 0; right: 0; height: 46px; -webkit-app-region: drag; }
         .box { text-align: center; max-width: 440px; padding: 24px; }
         h1 { font: 600 24px/1.2 -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: -.02em; margin: 22px 0 8px; }
-        p { color: #b3b9c6; margin: 0 0 22px; }
-        button { height: 36px; padding: 0 18px; border-radius: 9px; border: 1px solid #f3f4f6; background: #f3f4f6;
-                 color: #0b0c10; font: 600 13px -apple-system, sans-serif; cursor: pointer; }
-        button:hover { background: #fff; }
-        #status { margin-top: 16px; color: #7d8494; font-size: 12.5px; min-height: 20px; }
+        p { color: #4a5160; margin: 0 0 22px; }
+        button { height: 36px; padding: 0 18px; border-radius: 9px; border: 1px solid #0d1017; background: #0d1017;
+                 color: #fff; font: 600 13px -apple-system, sans-serif; cursor: pointer; }
+        button:hover { background: #262b36; }
+        #status { margin-top: 16px; color: #6b7280; font-size: 12.5px; min-height: 20px; }
         </style></head><body><div class="drag"></div><div class="box">
-        <svg width="64" height="64" viewBox="0 0 32 32"><circle cx="16" cy="16" r="11" fill="none" stroke="#2a2f3b"/>
-        <circle cx="16" cy="16" r="3.4" fill="#f3f4f6"/><circle cx="16" cy="5" r="2.6" fill="#ffb547"/>
-        <circle cx="26.46" cy="12.6" r="2.6" fill="#ff5a4d"/><circle cx="22.47" cy="24.9" r="2.6" fill="#b9a6ff"/>
-        <circle cx="9.53" cy="24.9" r="2.6" fill="#4fe0c2"/><circle cx="5.54" cy="12.6" r="2.6" fill="#6fa8ff"/></svg>
+        <svg width="72" height="72" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="8.5" fill="#fff" stroke="#e6e8ee"/>
+        <circle cx="16" cy="16" r="9.6" fill="none" stroke="#d9dce4"/><circle cx="16" cy="16" r="3.6" fill="#0d1017"/>
+        <circle cx="16" cy="6.4" r="2.4" fill="#e48a00"/><circle cx="25.13" cy="13.03" r="2.4" fill="#e5483b"/>
+        <circle cx="21.64" cy="23.77" r="2.4" fill="#7259f5"/><circle cx="10.36" cy="23.77" r="2.4" fill="#0ea887"/>
+        <circle cx="6.87" cy="13.03" r="2.4" fill="#2c74f0"/></svg>
         <h1>Galaxy Link isn't running</h1>
         <p>The members can't reach each other until it starts. It normally starts on its own when you log in.</p>
         <button onclick="window.webkit.messageHandlers.galaxy.postMessage('start')">Start Galaxy Link</button>

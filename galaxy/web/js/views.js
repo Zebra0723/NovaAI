@@ -79,6 +79,30 @@ document.addEventListener("click", (e) => {
 
 // ---------------------------------------------------------------- overview
 
+/** Twelve hours of a member's activity, one bar an hour. */
+function sparkline(id) {
+  const now = Date.now();
+  const bins = new Array(12).fill(0);
+  for (const e of state.events) {
+    if (e.body !== id || e.kind === "presence") continue;
+    const h = Math.floor((now - e.at) / 3600_000);
+    if (h >= 0 && h < 12) bins[11 - h]++;
+  }
+  for (const m of state.chat) {
+    if (m.body !== id) continue;
+    const h = Math.floor((now - m.at) / 3600_000);
+    if (h >= 0 && h < 12) bins[11 - h]++;
+  }
+  const max = Math.max(1, ...bins);
+  const bars = bins
+    .map((v, i) => {
+      const h = v ? 4 + (v / max) * 20 : 2;
+      return `<rect x="${i * 10 + 1}" y="${26 - h}" width="7" height="${h}" rx="2" fill="${hex(id)}" fill-opacity="${v ? 0.25 + (v / max) * 0.6 : 0.12}"/>`;
+    })
+    .join("");
+  return `<svg viewBox="0 0 120 26" preserveAspectRatio="none" aria-label="Activity over the last 12 hours">${bars}</svg>`;
+}
+
 function memberCard(b) {
   const meta = MEMBERS[b.id] ?? { sense: "New", role: b.powers.map((p) => p.replaceAll("_", " ")).join(", ") };
   const status = b.online ? "Running" : b.joined ? "Not running" : "Not joined yet";
@@ -90,21 +114,41 @@ function memberCard(b) {
       : b.id === "orbit"
         ? `<span class="muted">Quiet until you talk to it</span>`
         : b.joined
-          ? `<span class="muted">Will pick up where it left off</span>`
+          ? `<span class="muted">Picks up where it left off</span>`
           : `<span class="muted">Joins with an intro when it first connects</span>`;
   return `<article class="card member ${b.online ? "online" : ""} ${b.joined ? "" : "never"}" data-body="${b.id}">
     <div class="top">${avatar(b.id, "lg", b.online ? "" : "off")}<span class="sense">${esc(meta.sense)}</span></div>
     <h3>${esc(b.name)}</h3>
     <div class="role">${esc(meta.role)}</div>
     <div class="doing">${doing}</div>
+    <div class="spark">${sparkline(b.id)}</div>
     <div class="status"><span class="lamp ${b.online ? "on live" : b.joined ? "" : "never"}"></span>${status}<span class="when">${esc(when)}</span></div>
   </article>`;
+}
+
+/** What's going on, in a sentence or two. */
+function story() {
+  const bodies = bodiesInOrder();
+  const who = (id) => `<span class="who" data-body="${id}">${esc(nameOf(id))}</span>`;
+  const parts = [];
+  const working = bodies.filter((b) => b.working);
+  for (const b of working.slice(0, 2)) parts.push(`${who(b.id)} is working on <b>${esc(b.working.title)}</b>.`);
+  const pending = state.pending.pending;
+  if (pending.length === 1) parts.push(`${who(pending[0].from)} is waiting on your yes.`);
+  if (pending.length > 1) parts.push(`<b>${pending.length} questions</b> are waiting on your yes.`);
+  const waiting = state.tasks.filter((t) => t.status === "queued").length;
+  if (waiting) parts.push(`${waiting === 1 ? "One handoff is" : `${waiting} handoffs are`} waiting to be picked up.`);
+  if (!parts.length) {
+    const running = bodies.filter((b) => b.online).length;
+    parts.push(running ? "Everyone's free, and nothing needs you." : "No members are running right now.");
+  }
+  return parts.join(" ");
 }
 
 function feedRow(m) {
   return `<div class="feed-row">${avatar(m.body, "sm")}<div class="body">
     <div class="line1"><span class="name-c" data-body="${m.body}">${esc(nameOf(m.body))}</span><span class="time">${esc(shortDate(m.at))}</span></div>
-    <div class="text">${richText(m.kind === "intro" ? m.text : m.text)}</div></div></div>`;
+    <div class="text">${richText(m.text)}</div></div></div>`;
 }
 
 function leftWords(ms) {
@@ -173,26 +217,35 @@ const overview = {
     const o = state.overview;
     const bodies = bodiesInOrder();
     const running = bodies.filter((b) => b.online).length;
-    const where = o?.presence?.atMac ? "You're at the Mac, so results come to the screen." : "You're away, so results go to your phone.";
     const recent = state.chat.filter((m) => m.kind !== "claimed").slice(-6).reverse();
     const pending = state.pending.pending;
     const flying = state.tasks.filter((t) => t.status === "queued" || t.status === "claimed");
     const c = o?.counts ?? { chatToday: 0, inFlight: 0, finishedToday: 0, memories: 0, approvals: 0 };
+    const stat = (k, v, sub, ico, attention = false) =>
+      `<div class="card stat ${attention ? "attention" : ""}"><div class="k">${k}</div><span class="ico">${icon(ico)}</span><div class="v">${v}</div><div class="s">${sub}</div></div>`;
     return `<div class="page">
-      <div class="head"><div>
-        <div class="eyebrow">${esc(new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }))}</div>
-        <h1>${greeting()}</h1>
-        <p>${running} of ${bodies.length} members running. ${where}</p>
-      </div></div>
+      <section class="card hero">
+        <div>
+          <div class="date">${esc(new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }))}</div>
+          <h1>${greeting()}</h1>
+          <div class="story">${story()}</div>
+          <div class="pills">
+            <a class="pill" href="#/chat"><span class="lamp on" style="--c:var(--good)"></span>${running} of ${bodies.length} running</a>
+            <a class="pill" href="#/system">${o?.presence?.atMac ? "You're at the Mac · results on screen" : "You're away · results to your phone"}</a>
+            ${pending.length ? `<a class="pill attention" href="#/approvals">${pending.length} waiting on you</a>` : ""}
+          </div>
+        </div>
+        <a class="hero-map" href="#/map" aria-label="Open the Galaxy Map">${mapSVG({ compact: true, uid: "h" })}</a>
+      </section>
 
       <div class="members">${bodies.map(memberCard).join("")}</div>
 
       <div class="stats">
-        <div class="card stat"><div class="k">Messages today</div><div class="v">${c.chatToday}</div><div class="s">in Galaxy Chat</div></div>
-        <div class="card stat"><div class="k">In flight</div><div class="v">${c.inFlight}</div><div class="s">handoffs between members</div></div>
-        <div class="card stat"><div class="k">Finished today</div><div class="v">${c.finishedToday}</div><div class="s">handoffs done</div></div>
-        <div class="card stat"><div class="k">Memories</div><div class="v">${c.memories}</div><div class="s">shared by everyone</div></div>
-        <div class="card stat ${pending.length ? "attention" : ""}"><div class="k">Waiting on you</div><div class="v">${pending.length}</div><div class="s">${pending.length ? "yes or no needed" : "nothing to answer"}</div></div>
+        ${stat("Messages today", c.chatToday, "in Galaxy Chat", "chatline")}
+        ${stat("In flight", c.inFlight, "handoffs between members", "flight")}
+        ${stat("Finished today", c.finishedToday, "handoffs done", "done")}
+        ${stat("Memories", c.memories, "shared by everyone", "memory")}
+        ${stat("Waiting on you", pending.length, pending.length ? "yes or no needed" : "nothing to answer", "approvals", pending.length > 0)}
       </div>
 
       <div class="split section">
@@ -215,7 +268,7 @@ const overview = {
           <div class="card" style="padding:4px 20px">${flying
             .slice(0, 6)
             .map(
-              (t) => `<div class="flight" data-task="${t.id}" style="cursor:pointer">${route(t.from, t.to)}<span class="t">${esc(t.title)}</span>${statusChip(t.status)}<span class="muted mono" style="font-size:11px">${esc(ago(t.createdAt))}</span></div>`,
+              (t) => `<div class="flight" data-task="${t.id}" style="cursor:pointer">${route(t.from, t.to)}<span class="t">${esc(t.title)}</span>${statusChip(t.status)}<span class="muted" style="font-size:12px">${esc(ago(t.createdAt))}</span></div>`,
             )
             .join("")}</div></div>`
           : ""
@@ -349,36 +402,43 @@ const chat = {
 
 let mapSignature = "";
 
-function mapSVG() {
+/** The Galaxy Map. `compact` is the small version in the overview's hero: no labels. */
+function mapSVG({ compact = false, uid = "m" } = {}) {
   const bodies = bodiesInOrder();
   const W = 1000,
     H = 660,
     cx = W / 2,
     cy = H / 2 + 6;
+  const rx = compact ? 360 : 330,
+    ry = compact ? 250 : 232;
   const pos = {};
   bodies.forEach((b, i) => {
     const a = ((-90 + (i * 360) / bodies.length) * Math.PI) / 180;
-    pos[b.id] = { x: cx + 330 * Math.cos(a), y: cy + 232 * Math.sin(a) };
+    pos[b.id] = { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) };
   });
   const color = hex;
   const now = Date.now();
   const arcs = state.tasks.filter(
     (t) => pos[t.from] && pos[t.to] && (t.status === "queued" || t.status === "claimed" || now - t.updatedAt < 15 * 60_000),
   );
+  const nodeR = compact ? 54 : 44;
 
+  // The orbit the members sit on.
+  let lines = `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="#e3e6ec" stroke-width="${compact ? 3 : 1.4}"/>`;
   let defs = "";
-  let lines = "";
   for (const b of bodies) {
     const p = pos[b.id];
     const dx = p.x - cx,
       dy = p.y - cy,
       d = Math.hypot(dx, dy);
-    const x1 = cx + (dx / d) * 64,
-      y1 = cy + (dy / d) * 64,
-      x2 = p.x - (dx / d) * 50,
-      y2 = p.y - (dy / d) * 50;
-    lines += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${b.online ? color(b.id) : "#2a2f3b"}" stroke-opacity="${b.online ? 0.35 : 1}" stroke-width="1.2" ${
-      b.online ? "" : 'stroke-dasharray="3 6"'
+    const x1 = cx + (dx / d) * (compact ? 80 : 64),
+      y1 = cy + (dy / d) * (compact ? 80 : 64),
+      x2 = p.x - (dx / d) * (nodeR + 6),
+      y2 = p.y - (dy / d) * (nodeR + 6);
+    defs += `<linearGradient id="${uid}-s-${b.id}" gradientUnits="userSpaceOnUse" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">
+      <stop offset="0" stop-color="${color(b.id)}" stop-opacity=".1"/><stop offset="1" stop-color="${color(b.id)}" stop-opacity=".75"/></linearGradient>`;
+    lines += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${b.online ? `url(#${uid}-s-${b.id})` : "#d9dce4"}" stroke-width="${compact ? 4 : 2}" stroke-linecap="round" ${
+      b.online ? "" : `stroke-dasharray="${compact ? "6 10" : "3 6"}"`
     }/>`;
   }
 
@@ -394,49 +454,61 @@ function mapSVG() {
       nl = Math.hypot(nx, ny) || 1;
     const qx = mx + (cx - mx) * 0.38 + (nx / nl) * 34,
       qy = my + (cy - my) * 0.38 + (ny / nl) * 34;
-    const id = `arc-${i}`;
-    defs += `<linearGradient id="g-${i}" gradientUnits="userSpaceOnUse" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}">
+    const id = `${uid}-arc-${i}`;
+    defs += `<linearGradient id="${uid}-g-${i}" gradientUnits="userSpaceOnUse" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}">
       <stop offset="0" stop-color="${color(t.from)}"/><stop offset="1" stop-color="${color(t.to)}"/></linearGradient>`;
     const d = `M${a.x.toFixed(1)} ${a.y.toFixed(1)} Q${qx.toFixed(1)} ${qy.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+    const w = compact ? 5 : 2.4;
     if (t.status === "claimed") {
-      flows += `<path id="${id}" d="${d}" fill="none" stroke="url(#g-${i})" stroke-width="2" stroke-opacity=".85"/>
-        <circle r="5" fill="${color(t.to)}" filter="url(#glow)"><animateMotion dur="2.6s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines=".4 0 .2 1"><mpath href="#${id}"/></animateMotion></circle>`;
+      flows += `<path id="${id}" d="${d}" fill="none" stroke="url(#${uid}-g-${i})" stroke-width="${w}" stroke-linecap="round"/>
+        <circle r="${compact ? 11 : 6}" fill="#fff" stroke="${color(t.to)}" stroke-width="${compact ? 5 : 3}" filter="url(#${uid}-glow)"><animateMotion dur="2.6s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines=".4 0 .2 1"><mpath href="#${id}"/></animateMotion></circle>`;
     } else if (t.status === "queued") {
-      flows += `<path d="${d}" fill="none" stroke="url(#g-${i})" stroke-width="1.6" stroke-opacity=".7" stroke-dasharray="5 7" class="dash"/>`;
+      flows += `<path d="${d}" fill="none" stroke="url(#${uid}-g-${i})" stroke-width="${w * 0.8}" stroke-opacity=".75" stroke-dasharray="${compact ? "10 12" : "5 7"}" stroke-linecap="round" class="dash"/>`;
     } else {
-      const fade = Math.max(0.12, 0.6 - (now - t.updatedAt) / (15 * 60_000) / 2);
-      flows += `<path d="${d}" fill="none" stroke="url(#g-${i})" stroke-width="1.4" stroke-opacity="${fade.toFixed(2)}"/>`;
+      const fade = Math.max(0.15, 0.55 - (now - t.updatedAt) / (15 * 60_000) / 2);
+      flows += `<path d="${d}" fill="none" stroke="url(#${uid}-g-${i})" stroke-width="${w * 0.7}" stroke-opacity="${fade.toFixed(2)}"/>`;
     }
   });
 
   let nodes = "";
   for (const b of bodies) {
     const p = pos[b.id];
+    const c = color(b.id);
     const status = b.online ? (b.working ? "Working" : "Running") : b.joined ? "Not running" : "Not joined";
-    nodes += `<g class="node ${b.online ? "online" : ""}" data-body="${b.id}" transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})">
-      ${b.online ? `<circle class="node-ring" r="50" fill="none" stroke="${color(b.id)}" stroke-width="1.5"/>` : ""}
-      <circle r="44" fill="#0f1116" stroke="${b.online ? color(b.id) : "#2a2f3b"}" stroke-opacity="${b.online ? 0.55 : 1}" stroke-width="1.2"/>
-      <circle r="44" fill="${color(b.id)}" fill-opacity="${b.online ? 0.08 : 0.02}"/>
-      <svg x="-17" y="-17" width="34" height="34" viewBox="0 0 24 24" style="color:${color(b.id)};opacity:${b.online ? 1 : 0.4}">${glyph(b.id).replace(/^<svg[^>]*>|<\/svg>$/g, "")}</svg>
-      <text y="72" text-anchor="middle" fill="#f3f4f6" font-size="15" font-weight="600" style="font-family:var(--display)">${esc(b.name)}</text>
-      <text y="91" text-anchor="middle" fill="#7d8494" font-size="11" style="font-family:var(--mono)" letter-spacing="1.2">${status.toUpperCase()}</text>
+    const g = compact ? 50 : 38;
+    nodes += `<g class="node ${b.online ? "online" : ""}" transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})">
+      ${b.online ? `<circle class="node-ring" r="${nodeR + 6}" fill="none" stroke="${c}" stroke-width="${compact ? 4 : 2}"/>` : ""}
+      <circle r="${nodeR}" fill="${b.online ? `url(#${uid}-ball-${b.id})` : "#eef0f4"}" stroke="${b.online ? "none" : "#d9dce4"}" stroke-width="2" filter="url(#${uid}-shadow)"/>
+      <svg x="${-g / 2}" y="${-g / 2}" width="${g}" height="${g}" viewBox="0 0 24 24" style="color:${b.online ? "#fff" : "#9aa1ad"}">${glyph(b.id).replace(/^<svg[^>]*>|<\/svg>$/g, "")}</svg>
+      ${
+        compact
+          ? ""
+          : `<text y="${nodeR + 26}" text-anchor="middle" fill="#0d1017" font-size="15" font-weight="650" stroke="#fff" stroke-width="5" paint-order="stroke" style="font-family:var(--display)">${esc(b.name)}</text>
+      <text y="${nodeR + 44}" text-anchor="middle" fill="${b.online ? c : "#6b7280"}" font-size="12" font-weight="600" stroke="#fff" stroke-width="4" paint-order="stroke" style="font-family:var(--sans)">${status}</text>`
+      }
     </g>`;
+    defs += `<radialGradient id="${uid}-ball-${b.id}" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="${c}" stop-opacity=".7"/><stop offset=".55" stop-color="${c}"/><stop offset="1" stop-color="${c}"/></radialGradient>`;
   }
 
   const atMac = state.overview?.presence?.atMac;
+  const coreR = compact ? 70 : 48;
   const core = `<g transform="translate(${cx} ${cy})">
-    <circle class="core-ring" r="78" fill="none" stroke="#2a2f3b" stroke-dasharray="2 7"/>
-    <circle class="core-ring r2" r="62" fill="none" stroke="#232733" stroke-dasharray="14 10"/>
-    <circle r="46" fill="#121520" stroke="#2a2f3b"/>
-    <circle r="46" fill="url(#core)"/>
-    <text y="-2" text-anchor="middle" fill="#f3f4f6" font-size="13" font-weight="600" letter-spacing="3" style="font-family:var(--mono)">LINK</text>
-    <text y="17" text-anchor="middle" fill="#7d8494" font-size="10" style="font-family:var(--mono)" letter-spacing="1">${atMac ? "YOU'RE HERE" : "YOU'RE AWAY"}</text>
+    <circle class="core-ring" r="${coreR + 30}" fill="none" stroke="#d9dce4" stroke-width="${compact ? 3 : 1.4}" stroke-dasharray="${compact ? "4 14" : "2 7"}"/>
+    <circle class="core-ring r2" r="${coreR + 15}" fill="none" stroke="#e6e8ee" stroke-width="${compact ? 3 : 1.4}" stroke-dasharray="${compact ? "26 16" : "14 10"}"/>
+    <circle r="${coreR}" fill="url(#${uid}-core)" filter="url(#${uid}-shadow)"/>
+    ${
+      compact
+        ? ""
+        : `<text y="-1" text-anchor="middle" fill="#fff" font-size="13" font-weight="700" letter-spacing="2.5" style="font-family:var(--sans)">LINK</text>
+    <text y="16" text-anchor="middle" fill="#aab1bd" font-size="10.5" font-weight="500" style="font-family:var(--sans)">${atMac ? "You're here" : "You're away"}</text>`
+    }
   </g>`;
 
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Galaxy Map">
+  return `<svg viewBox="${compact ? "70 10 860 650" : `0 0 ${W} ${H}`}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Galaxy Map">
     <defs>${defs}
-      <radialGradient id="core"><stop offset="0" stop-color="#6fa8ff" stop-opacity=".18"/><stop offset="1" stop-color="#6fa8ff" stop-opacity="0"/></radialGradient>
-      <filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="3.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <radialGradient id="${uid}-core" cx=".35" cy=".3" r=".9"><stop offset="0" stop-color="#4b5263"/><stop offset=".6" stop-color="#151922"/><stop offset="1" stop-color="#0d1017"/></radialGradient>
+      <filter id="${uid}-glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <filter id="${uid}-shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="${compact ? 8 : 4}" stdDeviation="${compact ? 10 : 6}" flood-color="#101828" flood-opacity=".16"/></filter>
     </defs>
     ${lines}${flows}${core}${nodes}
   </svg>`;
