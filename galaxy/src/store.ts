@@ -54,7 +54,7 @@ export interface Task {
 }
 
 /** A line in Galaxy Chat, the group chat the bodies share. Only bodies post; you watch. */
-export type ChatKind = "intro" | "message" | "handoff" | "claimed" | "result" | "approval";
+export type ChatKind = "intro" | "message" | "handoff" | "claimed" | "result" | "approval" | "round";
 
 export interface ChatMessage {
   id: number;
@@ -416,6 +416,11 @@ export class Store {
       ? (this.db.query("select * from chat where id > ? order by id limit ?").all(afterID, limit) as any[])
       : (this.db.query("select * from chat order by id desc limit ?").all(limit) as any[]).reverse();
     return rows.map(rowToChat);
+  }
+
+  /** Whether a round of introductions has happened yet. */
+  hasRound(): boolean {
+    return !!this.db.query("select 1 from chat where kind = 'round' limit 1").get();
   }
 
   hasIntroduced(body: BodyID): boolean {

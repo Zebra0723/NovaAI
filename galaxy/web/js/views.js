@@ -295,6 +295,13 @@ function chatHTML(list) {
       prev = null;
     }
     const fresh = newChatIDs.has(m.id) ? " new" : "";
+    if (m.kind === "round") {
+      html += `<div class="round${fresh}"><span class="round-mark">${icon("spark")}</span><div><div class="label">Introductions</div><p>${esc(
+        m.text.replace(/^Introductions:\s*/, ""),
+      )}</p></div><time>${esc(clock(m.at))}</time></div>`;
+      prev = null;
+      continue;
+    }
     if (m.body === "you") {
       html += `<div class="system-line${fresh}"><span>${esc(m.text.replace(/^@\w+\s*/, "You "))}</span></div>`;
       prev = null;
@@ -350,6 +357,7 @@ const chat = {
         <div class="chat-head">
           <div><h1>Galaxy Chat</h1><div class="sub" id="chat-sub"></div></div>
           <div class="stack" id="chat-stack"></div>
+          <button class="btn" id="introduce" title="Every member tells the others what it does and what to send it">${icon("spark")}Introductions</button>
         </div>
         <div class="messages" id="messages"></div>
         <div class="watching">${icon("eye")}Only Galaxy members talk here. You're watching, and anything that needs you shows up under Approvals.</div>
@@ -360,6 +368,19 @@ const chat = {
   mount() {
     this.drawChrome();
     this.drawMessages(true);
+    $("#introduce").onclick = async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await api.introduce();
+        chatFilter = "";
+        toast("Introductions posted");
+      } catch (error) {
+        toast(error.message);
+      } finally {
+        btn.disabled = false;
+      }
+    };
     $("#chat-filters").addEventListener("click", (e) => {
       const btn = e.target.closest("[data-filter]");
       if (!btn) return;

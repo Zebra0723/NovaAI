@@ -198,6 +198,9 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     return json(link.say(who, "message", String(text ?? "")), 201);
   }
 
+  // A fresh round of introductions, from the app or `galaxy introduce`.
+  if (path === "/v1/introductions" && method === "POST") return json(link.introductions(), 201);
+
   // ------------------------------------------------------------- approvals
   if (path === "/v1/approvals" && method === "POST") return json(link.requestApproval(needBody(), await input()), 201);
   if (path === "/v1/approvals" && method === "GET") {

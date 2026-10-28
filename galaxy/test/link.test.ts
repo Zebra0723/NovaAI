@@ -159,7 +159,7 @@ describe("context", () => {
     expect(text).toContain("You are Nova");
     expect(text).toContain("Goes to Lincoln High");
     expect(text).toContain("Comet: Built the robotics club website");
-    expect(text).toContain("Comet (running)");
+    expect(text).toContain("Comet [comet], running");
   });
 });
 

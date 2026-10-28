@@ -63,5 +63,6 @@ export const api = {
   approvals: () => call("GET", "/v1/approvals?limit=60"),
   pending: (since = 0, wait = 0) =>
     call("GET", `/v1/approvals/pending?since=${since}${wait ? `&wait=${wait}` : ""}`, undefined, { timeout: wait ? (wait + 10) * 1000 : 10_000 }),
+  introduce: () => call("POST", "/v1/introductions"),
   decide: (id, approve) => call("POST", `/v1/approvals/${id}/decide`, { decision: approve ? "approve" : "reject", via: "app" }),
 };

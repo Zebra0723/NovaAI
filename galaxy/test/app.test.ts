@@ -138,3 +138,50 @@ describe("the app's pages", () => {
     expect((await req("/v1/overview", {}, same)).status).toBe(401);
   });
 });
+
+describe("introductions", () => {
+  const texts = (body: string) => store.chat().filter((m) => m.body === body && m.kind === "message").map((m) => m.text);
+
+  test("the first round happens by itself once there are two members, and only once", () => {
+    link.hello("comet", {});
+    expect(store.hasRound()).toBe(false);
+    link.hello("nova", {});
+    expect(store.chat().filter((m) => m.kind === "round")).toHaveLength(1);
+    link.introduceIfDue();
+    expect(store.chat().filter((m) => m.kind === "round")).toHaveLength(1);
+    expect(texts("nova")[0]).toContain("Send me:");
+    expect(texts("comet").at(-1)).toContain("@Nova, anything that has to happen on the Mac itself is yours.");
+  });
+
+  test("Orbit tells the others never to hand it work, and nobody offers it any", () => {
+    for (const id of ["comet", "orbit", "nova", "zenith"]) link.hello(id, {});
+    link.introductions();
+    expect(texts("orbit").some((t) => t.includes("never hand me work"))).toBe(true);
+    for (const id of ["comet", "nova", "zenith"]) expect(texts(id).join(" ")).not.toContain("@Orbit");
+  });
+
+  test("a member who joins later is welcomed by the others", () => {
+    link.hello("comet", {});
+    link.hello("nova", {});
+    link.hello("zenith", {});
+    expect(texts("comet").at(-1)).toBe("Welcome, @Zenith. The long missions go to you.");
+    expect(texts("zenith")[0]).toContain("Send me:");
+  });
+
+  test("each member's prompt describes its teammates and what to hand them", () => {
+    for (const id of ["comet", "orbit", "nova", "nebula", "zenith"]) link.hello(id, {});
+    const ctx = link.promptContext("comet");
+    expect(ctx).toContain("Nova [nova]");
+    expect(ctx).toContain("Hand Zenith: projects with many steps");
+    expect(ctx).toContain("Never hand Orbit anything.");
+    expect(ctx).not.toContain("Comet [comet]");
+  });
+
+  test("the app can call a fresh round", async () => {
+    link.hello("comet", {});
+    link.hello("nova", {});
+    const res = await req("/v1/introductions", { method: "POST" });
+    expect(res.status).toBe(201);
+    expect(store.chat().filter((m) => m.kind === "round")).toHaveLength(2);
+  });
+});

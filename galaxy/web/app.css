@@ -340,6 +340,15 @@ kbd { font: 400 11px var(--mono); padding: 1px 6px; border-radius: 5px; border: 
 .joined .text { color: var(--ink-2); font-size: 14.5px; line-height: 1.65; max-width: 68ch; }
 .joined .time { margin-top: 12px; font: 400 11px var(--mono); color: var(--ink-3); }
 
+.round { display: flex; align-items: flex-start; gap: 14px; margin: 26px 0 18px; padding: 16px 18px; border: 1px solid var(--rule); border-radius: 14px; background: var(--card); }
+.round .round-mark { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--ink); color: #fff; }
+.round .round-mark svg { width: 16px; height: 16px; }
+.round > div { flex: 1; min-width: 0; }
+.round p { margin: 4px 0 0; font: 400 22px/1.25 var(--serif); letter-spacing: -.01em; color: var(--ink); }
+.round time { font: 400 11px var(--mono); color: var(--ink-3); }
+.round.new { animation: arrive .5s var(--ease) both; }
+.chat-head .btn { margin-bottom: 2px; }
+.chat-head .stack { margin-right: 4px; }
 .system-line { display: flex; justify-content: center; margin: 14px 0; }
 .system-line span { font: 400 11.5px var(--mono); color: var(--ink-2); padding: 5px 12px; border-radius: 12px; background: var(--paper-2); }
 

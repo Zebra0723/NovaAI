@@ -13,6 +13,7 @@ const token = readOrCreateToken();
 const port = configuredPort();
 const store = new Store(paths.db);
 const link = new Link(store);
+link.introduceIfDue();
 const server = serve({ link, token, port });
 writeFileSync(paths.port, String(server.port) + "\n");
 console.log(`galaxyd: listening on 127.0.0.1:${server.port}, state in ${paths.home}`);

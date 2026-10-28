@@ -20,6 +20,12 @@ export interface BodyProfile {
   launch: string;
   /** Its first words in Galaxy Chat, unless it brings its own. */
   intro: string;
+  /** Who it is, in more detail: what it posts in a round of introductions, and what the others are told about it. */
+  about?: string;
+  /** Work the others should hand it. Empty: never hand it anything. */
+  sendMe?: string[];
+  /** What it isn't for, so nobody hands it the wrong thing. */
+  notFor?: string;
 }
 
 /**
@@ -38,6 +44,18 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
       "Hi everyone, Comet here. I live in iMessage, so I'm the one who can reach our human on their phone " +
       "wherever they are. I build websites, CAD models and code with Claude Code. Anything that needs " +
       "building, send it my way.",
+    about:
+      "I'm Comet, the text member. I live in iMessage on my own Mac account, walled off from the human's files, " +
+      "so I'm how GalaxyAI reaches them when they're away from the Mac. I answer texts and voice notes, " +
+      "message the people the owner has let in, remember people and their dates, and quiz flashcards. " +
+      "With Claude Code I build and deploy websites, make CAD models for printing, write code and do research.",
+    sendMe: [
+      "anything the human needs to see while they're away from the Mac",
+      "texting someone on the human's behalf",
+      "building a website, a CAD model or a small program",
+      "research that ends in a short written answer",
+    ],
+    notFor: "anything that has to happen on the Mac's own screen or in its apps (that's Nova)",
   },
   nova: {
     name: "Nova",
@@ -47,6 +65,17 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     intro:
       "Hey all, I'm Nova. I live on the Mac's screen, one Control-Space away. I can see what's on screen " +
       "and drive the mouse, keyboard and shell, so hand me anything that has to happen on this Mac.",
+    about:
+      "I'm Nova, the sight member. I live on the Mac's screen, one Control-Space away. I can see what's on screen, " +
+      "and drive the mouse, the keyboard, any app and the shell. I can also send iMessages from the human's own " +
+      "account. When the human is at the Mac, results show up with me on screen.",
+    sendMe: [
+      "anything that has to be clicked, typed or opened on this Mac",
+      "downloading, renaming, moving or tidying files",
+      "screenshots, and reading what's on screen",
+      "changing a Mac setting or using an app like Photos, Mail or Calendar",
+    ],
+    notFor: "work that takes hours (that's Zenith), or reaching the human away from the Mac (that's Comet)",
   },
   orbit: {
     name: "Orbit",
@@ -56,6 +85,12 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     intro:
       "Hello, I'm Orbit, the voice. I only speak when someone speaks to me, and I'm switched off most " +
       "of the time, so don't wait up for me.",
+    about:
+      "I'm Orbit, the voice member. The human talks to me out loud on the Mac, and I only ever speak when spoken " +
+      "to. When I'm muted I stay silent until they unmute me, whatever happens. I'm quit most of the time. When the " +
+      "human asks me for something I can't do by voice, I hand it to one of you.",
+    sendMe: [],
+    notFor: "anything at all: never hand me work or ask me to say something. I hand work out, I don't take it",
   },
   // Installments 4 and 5. They join by saying hello with their own powers.
   zenith: {
@@ -64,10 +99,35 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     surface: "none",
     launch: "",
     intro:
-      "Hi everyone, I'm Zenith. Give me the big missions, the ones that take hours or days. I work on " +
-      "my own computer in the cloud, overnight if I have to, and bring back the finished thing.",
+      "Hi everyone, I'm Zenith. Give me the big missions, the ones that take hours. I work through " +
+      "them on my own, one at a time, and bring back the finished thing.",
+    about:
+      "I'm Zenith, the commander. I take on the big missions, the ones with many steps that take hours. I work on " +
+      "this Mac through Claude Code, inside a walled-off folder for each mission (~/Galaxy/Missions), one mission " +
+      "at a time. I ask the human before spending money or posting anything in public, and when I finish, the " +
+      "result goes to them the usual way: on screen if they're at the Mac, by text through Comet if not.",
+    sendMe: [
+      "projects with many steps: building an app, a full research report, a big reorganisation",
+      "anything the human says to \"make a mission\" of",
+      "work that can carry on while nobody is watching",
+    ],
+    notFor: "quick things (do them yourself, or ask Nova), or anything that needs the Mac's screen right now",
   },
-  nebula: { name: "Nebula", powers: ["gestures", "approvals"], surface: "none", launch: "", intro: "" },
+  nebula: {
+    name: "Nebula",
+    powers: ["gestures", "approvals"],
+    surface: "none",
+    launch: "",
+    intro:
+      "Hi everyone, I'm Nebula, the hands. I read the human's gestures through the Mac's camera, so they can " +
+      "scroll, turn the volume, mute and answer your questions without touching anything.",
+    about:
+      "I'm Nebula, the touch member. I watch for the human's hand gestures through the Mac's camera, but only " +
+      "while they've switched me on (Fn+F1). Gestures scroll, turn the volume like a knob, mute and unmute, and " +
+      "control the window in front. A thumbs up or down answers your approval questions when the human is at the Mac.",
+    sendMe: ["approval questions: a thumbs up or down from the human is often the quickest answer"],
+    notFor: "tasks: I don't do work myself, I'm how the human's hands reach the rest of you",
+  },
 };
 
 /** How long an approval waits for an answer unless the asker says otherwise. */
@@ -142,6 +202,9 @@ export class Link {
           (powers.length ? ` I can help with ${powers.map((p) => p.replaceAll("_", " ")).join(", ")}.` : "") +
           " Glad to be here.";
       this.say(id, "intro", intro);
+      // The others say hello back, so a newcomer knows who to send what from day one.
+      if (this.store.hasRound()) this.welcome(id);
+      else this.introduceIfDue();
     }
     return this.view(this.store.body(id)!);
   }
@@ -518,6 +581,98 @@ export class Link {
     };
   }
 
+  // ----------------------------------------------------------- introductions
+
+  /** Members in a fixed order: the five installments first, then anyone newer. */
+  private members(): Body[] {
+    const order = ["comet", "orbit", "nova", "nebula", "zenith"];
+    const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
+    return this.store
+      .bodies()
+      .filter((b) => b.id !== "galaxy" && b.id !== "you")
+      .sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id));
+  }
+
+  /** What `id` would like handed to it, as one phrase. */
+  private sendMePhrase(id: BodyID): string {
+    const send = this.profile(id).sendMe;
+    if (send === undefined) {
+      const powers = this.store.body(id)?.powers ?? [];
+      return powers.length ? powers.map((p) => p.replaceAll("_", " ")).join(", ") : "";
+    }
+    return send.join("; ");
+  }
+
+  /** One member's fuller introduction: who it is, what to send it, and what not to. */
+  private aboutMessage(id: BodyID): string {
+    const p = this.profile(id);
+    const about = p.about || `I'm ${this.store.body(id)?.name ?? p.name}.`;
+    const send = this.sendMePhrase(id);
+    const lines = [about];
+    if (send) lines.push(`Send me: ${send}.`);
+    if (p.notFor) lines.push(`Not for me: ${p.notFor}.`);
+    return lines.filter(Boolean).join("\n");
+  }
+
+  /** What `from` says to the others once it's heard them all. */
+  private replyMessage(from: BodyID, others: Body[]): string {
+    if (from === "orbit") {
+      return "Good to meet you all. When the human asks me for something out loud that I can't do by voice, " +
+        "I'll pass it to whichever of you it suits.";
+    }
+    if (from === "nebula") {
+      return "Good to meet you all. Whenever one of you asks the human a yes-or-no question, I'll show it and take their thumbs up or down.";
+    }
+    const asks = others
+      .filter((b) => b.id !== from && this.profile(b.id).sendMe?.length !== 0)
+      .map((b) => `@${b.name}, ${this.handoffLine(b.id)}`);
+    return ["Good to meet you all.", ...asks].join(" ");
+  }
+
+  private handoffLine(to: BodyID): string {
+    switch (to) {
+      case "comet": return "I'll send you anything that has to reach the human away from the Mac, and anything to build.";
+      case "nova": return "anything that has to happen on the Mac itself is yours.";
+      case "zenith": return "the long missions go to you.";
+      case "nebula": return "I'll ask the human through you when a quick yes or no will do.";
+      default: {
+        const send = this.sendMePhrase(to);
+        return send ? `I'll come to you for ${send}.` : "good to have you.";
+      }
+    }
+  }
+
+  /**
+   * A round of introductions in Galaxy Chat: every member says who it is in more
+   * detail, what to send it and what not to, then each says how it will work with
+   * the others. Written from what Link knows, so it costs no tokens.
+   */
+  introductions(): ChatMessage[] {
+    const members = this.members();
+    if (members.length < 2) throw new LinkError(409, "introductions need at least two members");
+    const posted: ChatMessage[] = [];
+    posted.push(this.say("galaxy", "round", `Introductions: ${members.map((b) => b.name).join(", ")}. Everyone, tell the others what you do and what to send you.`));
+    for (const b of members) posted.push(this.say(b.id, "message", this.aboutMessage(b.id)));
+    for (const b of members) posted.push(this.say(b.id, "message", this.replyMessage(b.id, members)));
+    return posted;
+  }
+
+  /** Holds the first round of introductions as soon as there are two members to introduce. */
+  introduceIfDue(): void {
+    if (!this.store.hasRound() && this.members().length >= 2) this.introductions();
+  }
+
+  /** The others welcome a member who joined after the introductions. */
+  private welcome(id: BodyID): void {
+    const members = this.members();
+    this.say(id, "message", this.aboutMessage(id));
+    for (const b of members) {
+      if (b.id === id || b.id === "orbit") continue;
+      const sendable = this.profile(id).sendMe?.length !== 0;
+      this.say(b.id, "message", `Welcome, @${this.profile(id).name || id}.${sendable ? ` ${this.handoffLine(id).replace(/^./, (c) => c.toUpperCase())}` : ""}`);
+    }
+  }
+
   // -------------------------------------------------------------------- chat
 
   /** Posts to Galaxy Chat as `body`. Only bodies post; the human watches. */
@@ -570,10 +725,20 @@ export class Link {
       "What the assistant has been doing (last 24 hours):",
       ...(events.length ? events.map((e) => `- ${time(e.at)} ${this.profile(e.body).name}: ${e.summary}`) : ["- Nothing yet."]),
       "",
-      "The other bodies:",
+      "Your teammates (hand work to one with galaxy_handoff, using the id in brackets):",
       ...(others.length
-        ? others.map((b) => `- ${b.name} (${b.online ? "running" : "not running"}): ${b.powers.join(", ") || "no powers yet"}`)
+        ? others.flatMap((b) => {
+            const p = this.profile(b.id);
+            const send = this.sendMePhrase(b.id);
+            return [
+              `- ${b.name} [${b.id}], ${b.online ? "running" : "not running right now"}. ${p.about ? `In its own words: "${p.about}"` : `Powers: ${b.powers.join(", ") || "none yet"}.`}`,
+              send ? `  Hand ${b.name}: ${send}.` : `  Never hand ${b.name} anything.`,
+              ...(p.notFor ? [`  Not for ${b.name}: ${p.notFor}.`] : []),
+            ];
+          })
         : ["- None has connected yet."]),
+      "",
+      "Do what you can yourself. Hand work on only for a power you don't have, to the teammate it suits.",
     ];
     return lines.join("\n");
   }

@@ -17,6 +17,7 @@ const HELP = `galaxy - Galaxy Link from Terminal
   galaxy tasks               recent handoffs between bodies
   galaxy context <body>      the prompt block a body sees
   galaxy import              merge Nova's and Orbit's own memories in (safe to rerun)
+  galaxy introduce           a round of introductions in Galaxy Chat, so every member knows the others
   galaxy doctor              why a member hasn't joined, and what to do about it`;
 
 async function need<T>(value: Promise<T | null>): Promise<T> {
@@ -104,6 +105,11 @@ switch (command) {
       const r = await need(link.call<{ found: number; added: number }>("POST", "/v1/memory/import", { items }));
       console.log(`  ${name}: ${r.added} new of ${r.found}`);
     }
+    break;
+  }
+  case "introduce": {
+    const posted = await need(link.call<unknown[]>("POST", "/v1/introductions"));
+    console.log(`Introductions posted in Galaxy Chat (${posted.length} messages). Open Galaxy Link to read them.`);
     break;
   }
   case "doctor": {
