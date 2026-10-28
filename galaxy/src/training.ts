@@ -16,6 +16,22 @@ import type { BodyID, Store } from "./store";
 /** Who training is for: every member that does work. The trainer doesn't train itself. */
 export const TRAINEES = ["comet", "orbit", "nova", "nebula", "zenith"];
 export const TRAINER = "trainer";
+/** Minutes of overnight training each member gets: Nebula, whose skill is the hardest to get right, gets double. */
+export const BUDGET_MINUTES: Record<string, number> = { nebula: 24 };
+export const DEFAULT_MINUTES = 12;
+/** A session asked for by hand, to test training: always this long. */
+export const TEST_MINUTES = 12;
+export const budgetFor = (member: string) => BUDGET_MINUTES[member] ?? DEFAULT_MINUTES;
+/** Overnight window, local hours [start, end): sessions only start inside it. */
+export function trainingWindow(spec = process.env.GALAXY_TRAINER_WINDOW ?? "1-6"): [number, number] {
+  const m = /^(\d{1,2})-(\d{1,2})$/.exec(spec.trim());
+  return m ? [Number(m[1]) % 24, Number(m[2]) % 24] : [1, 6];
+}
+export function inWindow(d: Date, [start, end] = trainingWindow()): boolean {
+  const h = d.getHours();
+  return start <= end ? h >= start && h < end : h >= start || h < end;
+}
+
 /** Lessons a member's playbook holds at most. Fewer, sharper lessons beat a long list. */
 export const PLAYBOOK_MAX = 12;
 const LESSON_MAX_CHARS = 280;
@@ -52,6 +68,8 @@ export interface Session {
   /** 0 to 100, the day's average. */
   score: number | null;
   summary: string;
+  /** "night" for the overnight program, "test" for one you asked for. */
+  trigger: "night" | "test";
 }
 
 export interface Lesson {
@@ -63,7 +81,7 @@ export interface Lesson {
   createdAt: number;
 }
 
-export type ThreadKind = "message" | "drill" | "answer" | "feedback" | "summary" | "note";
+export type ThreadKind = "message" | "drill" | "answer" | "feedback" | "summary" | "note" | "sim" | "results";
 
 /** A line in the 1:1 between the trainer and one member. You can add notes; you watch the rest. */
 export interface ThreadMessage {
@@ -82,6 +100,8 @@ export interface ThreadMessage {
 
 export interface Practice {
   id: string;
+  /** "practice": answer a drill in words. "workout": Nebula trains its gestures on simulated hands. */
+  kind: "practice" | "workout";
   member: BodyID;
   sessionId: string;
   prompt: string;
@@ -171,7 +191,7 @@ export function tidyPlan(input: any): TrainingPlan {
         ...(clean(s?.data, 3000) ? { data: clean(s?.data, 3000) } : {}),
         ...(clean(s?.good, 800) ? { good: clean(s?.good, 800) } : {}),
       }))
-      .filter((s: any) => s.title && s.setup)
+      .filter((s: any, i: number, all: any[]) => s.title && s.setup && all.findIndex((x: any) => x.title?.toLowerCase() === s.title.toLowerCase()) === i)
       .slice(-60),
     observations: strings(input?.observations, 20, 400),
   };
@@ -186,6 +206,44 @@ export class Training {
     private readonly store: Store = link.store,
   ) {
     this.store.db.exec(SCHEMA);
+    const columns = (table: string) => (this.db.query(`pragma table_info(${table})`).all() as any[]).map((c) => c.name);
+    if (!columns("training_sessions").includes("trigger")) this.db.exec("alter table training_sessions add column trigger text not null default 'night'");
+    if (!columns("practice").includes("kind")) this.db.exec("alter table practice add column kind text not null default 'practice'");
+    this.db.exec("create table if not exists training_meta (key text primary key, value text not null)");
+    // Training 0.1 recorded sessions that never really ran. Start everyone again from their brief, once.
+    if (!this.db.query("select 1 from training_meta where key = 'reset-0.2'").get()) {
+      this.wipe();
+      this.db.query("insert into training_meta (key, value) values ('reset-0.2', ?)").run(String(this.now()));
+    }
+  }
+
+  private wipe() {
+    this.db.exec("delete from training_sessions; delete from training_lessons; delete from training_programs; delete from training_thread; delete from practice;");
+  }
+
+  /** You start training over: every program, session, lesson and 1:1 goes. Members start from their brief again. */
+  reset(who: BodyID) {
+    if (who !== "you" && who !== "galaxy") throw new TrainingError(403, "only you can reset training");
+    this.wipe();
+    for (const wake of [...this.threadWaiters]) wake();
+    return { ok: true };
+  }
+
+  /**
+   * A session still marked running when the trainer isn't, or long past its time, didn't
+   * really happen: it's closed as stopped, so nothing claims to be training when it isn't.
+   */
+  private settleStale() {
+    const trainerUp = this.link.isOnline(TRAINER);
+    const rows = this.db.query("select id, member, started_at from training_sessions where status = 'running'").all() as any[];
+    for (const r of rows) {
+      const late = this.now() - r.started_at > (budgetFor(r.member) + 10) * 60_000;
+      if (!trainerUp || late) {
+        this.db
+          .query("update training_sessions set status = 'failed', ended_at = ?, summary = ? where id = ?")
+          .run(this.now(), trainerUp ? "Ran past its time and was closed." : "The trainer stopped part way.", r.id);
+      }
+    }
   }
 
   private get db() {
@@ -240,6 +298,7 @@ export class Training {
       drills: r.drills,
       score: r.score,
       summary: r.summary,
+      trigger: r.trigger === "test" ? "test" : "night",
     };
   }
 
@@ -254,7 +313,7 @@ export class Training {
     );
   }
 
-  startSession(who: BodyID, member: string, day: string): Session {
+  startSession(who: BodyID, member: string, day: string, trigger: "night" | "test" = "night"): Session {
     this.needTrainer(who);
     this.needTrainee(member);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new TrainingError(400, "day is YYYY-MM-DD");
@@ -263,7 +322,9 @@ export class Training {
       .query("update training_sessions set status = 'failed', ended_at = ?, summary = 'Stopped part way.' where member = ? and status = 'running'")
       .run(this.now(), member);
     const id = newID("s");
-    this.db.query("insert into training_sessions (id, member, day, status, started_at) values (?, ?, ?, 'running', ?)").run(id, member, day, this.now());
+    this.db
+      .query("insert into training_sessions (id, member, day, status, started_at, trigger) values (?, ?, ?, 'running', ?, ?)")
+      .run(id, member, day, this.now(), trigger === "test" ? "test" : "night");
     return this.session(id)!;
   }
 
@@ -280,9 +341,9 @@ export class Training {
     return this.session(id)!;
   }
 
-  /** Minutes of training a member has had on `day`. */
-  minutesOn(member: BodyID, day: string): number {
-    const rows = this.db.query("select started_at, ended_at from training_sessions where member = ? and day = ?").all(member, day) as any[];
+  /** Minutes of overnight training a member has had on `day` (sessions you asked for don't count). */
+  minutesOn(member: BodyID, day: string, trigger = "night"): number {
+    const rows = this.db.query("select started_at, ended_at from training_sessions where member = ? and day = ? and trigger = ?").all(member, day, trigger) as any[];
     const ms = rows.reduce((sum, r) => sum + ((r.ended_at || this.now()) - r.started_at), 0);
     return Math.round(ms / 60_000);
   }
@@ -374,13 +435,13 @@ export class Training {
     input: { kind?: string; text?: string; sessionId?: string; rehearsal?: boolean; score?: number | null; speaker?: string },
   ): ThreadMessage {
     this.needTrainee(member);
-    const text = clean(input.text, 6000);
+    const text = clean(input.text, 20_000);
     if (!text) throw new TrainingError(400, "nothing to say");
     let kind = (input.kind ?? "message") as ThreadKind;
     let speaker: BodyID = who;
     if (who === "you") kind = "note";
     else if (who === TRAINER) {
-      if (!["message", "drill", "answer", "feedback", "summary"].includes(kind)) kind = "message";
+      if (!["message", "drill", "answer", "feedback", "summary", "sim", "results"].includes(kind)) kind = "message";
       // The trainer posts a rehearsed answer in the member's place, marked as rehearsed.
       if (kind === "answer") speaker = member;
     } else if (who === member) kind = kind === "answer" ? "answer" : "message";
@@ -389,7 +450,7 @@ export class Training {
     const rehearsal = kind === "answer" && who === TRAINER && input.rehearsal !== false;
     const result = this.db
       .query("insert into training_thread (member, speaker, kind, text, session_id, rehearsal, score, at) values (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(member, speaker, kind, text, clean(input.sessionId, 40), rehearsal ? 1 : 0, kind === "feedback" ? score : null, this.now());
+      .run(member, speaker, kind, text, clean(input.sessionId, 40), rehearsal ? 1 : 0, kind === "feedback" || kind === "results" ? score : null, this.now());
     for (const wake of [...this.threadWaiters]) wake();
     return this.rowToThread(this.db.query("select * from training_thread where id = ?").get(result.lastInsertRowid));
   }
@@ -430,6 +491,7 @@ export class Training {
   private rowToPractice(r: any): Practice {
     return {
       id: r.id,
+      kind: r.kind === "workout" ? "workout" : "practice",
       member: r.member,
       sessionId: r.session_id,
       prompt: r.prompt,
@@ -446,19 +508,21 @@ export class Training {
   }
 
   /** The trainer sets a member a drill. It reaches the member through its inbox, as kind "practice". */
-  setDrill(who: BodyID, input: { member?: string; sessionId?: string; prompt?: string }): Practice {
+  setDrill(who: BodyID, input: { member?: string; sessionId?: string; prompt?: string; kind?: string }): Practice {
     this.needTrainer(who);
     const member = this.needTrainee(String(input.member ?? ""));
-    const prompt = clean(input.prompt, 6000);
+    const kind = input.kind === "workout" ? "workout" : "practice";
+    const prompt = clean(input.prompt, kind === "workout" ? 20_000 : 12_000);
     if (!prompt) throw new TrainingError(400, "a drill needs a prompt");
-    if (!this.link.isOnline(member) || !this.store.body(member)?.powers.includes("practice")) {
-      throw new TrainingError(409, `${this.link.profile(member).name} can't take a drill right now`);
+    const power = kind === "workout" ? "gesture_training" : "practice";
+    if (!this.link.isOnline(member) || !this.store.body(member)?.powers.includes(power)) {
+      throw new TrainingError(409, `${this.link.profile(member).name} can't take a ${kind === "workout" ? "workout" : "drill"} right now`);
     }
     const id = newID("p");
     this.db
-      .query("insert into practice (id, member, session_id, prompt, status, created_at) values (?, ?, ?, ?, 'waiting', ?)")
-      .run(id, member, clean(input.sessionId, 40), prompt, this.now());
-    this.link.postInbox({ body: member, kind: "practice", taskId: id, text: prompt, replyTo: "" });
+      .query("insert into practice (id, member, session_id, prompt, status, created_at, kind) values (?, ?, ?, ?, 'waiting', ?, ?)")
+      .run(id, member, clean(input.sessionId, 40), prompt, this.now(), kind);
+    this.link.postInbox({ body: member, kind, taskId: id, text: prompt, replyTo: "" });
     return this.practice(id)!;
   }
 
@@ -468,11 +532,12 @@ export class Training {
     if (!p) throw new TrainingError(404, "no such drill");
     if (p.member !== who) throw new TrainingError(403, "that drill was set for someone else");
     if (p.status !== "waiting") throw new TrainingError(409, "that drill is closed");
-    const text = clean(answer, 6000);
+    const text = clean(answer, p.kind === "workout" ? 60_000 : 6000);
     if (!text) throw new TrainingError(400, "an empty answer");
     this.db.query("update practice set answer = ?, status = 'answered', answered_at = ? where id = ?").run(text, this.now(), id);
-    // The member's own answer goes straight into its 1:1, in its own name.
-    this.post(who, p.member, { kind: "answer", text, sessionId: p.sessionId });
+    // The member's own answer goes straight into its 1:1, in its own name. A workout's
+    // results are read and posted by the trainer, once it has made sense of them.
+    if (p.kind === "practice") this.post(who, p.member, { kind: "answer", text, sessionId: p.sessionId });
     for (const wake of [...(this.practiceWaiters.get(id) ?? [])]) wake();
     return this.practice(id)!;
   }
@@ -510,9 +575,13 @@ export class Training {
 
   /** Everything the Trainer page shows at a glance. */
   overview(day = localDay(new Date(this.now()))) {
+    this.settleStale();
+    const [start, end] = trainingWindow();
     return {
       day,
-      minutesPerDay: Number(process.env.GALAXY_TRAINER_MINUTES ?? 12),
+      minutesPerDay: DEFAULT_MINUTES,
+      testMinutes: TEST_MINUTES,
+      window: { start, end },
       trainerOnline: this.link.isOnline(TRAINER),
       members: TRAINEES.map((member) => {
         const sessions = this.sessions(member, 14);
@@ -520,8 +589,10 @@ export class Training {
         return {
           member,
           joined: !!this.store.body(member),
-          practises: !!this.store.body(member)?.powers.includes("practice"),
+          practises: !!this.store.body(member)?.powers.includes(member === "nebula" ? "gesture_training" : "practice"),
+          budget: budgetFor(member),
           minutesToday: this.minutesOn(member, day),
+          testedToday: this.minutesOn(member, day, "test"),
           lessons: this.lessons(member).length,
           programVersion: program?.version ?? 0,
           focus: program?.plan.focus.slice(0, 3) ?? [],
@@ -538,6 +609,7 @@ export class Training {
   /** One member's whole training: program, playbook, sessions and the 1:1. */
   member(member: string) {
     this.needTrainee(member);
+    this.settleStale();
     return {
       member,
       program: this.program(member),

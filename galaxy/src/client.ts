@@ -25,7 +25,7 @@ export interface LinkTask {
 
 export interface LinkInboxItem {
   id: number;
-  kind: "task_result" | "message" | "practice";
+  kind: "task_result" | "message" | "practice" | "workout";
   taskId: string;
   text: string;
   replyTo: string;

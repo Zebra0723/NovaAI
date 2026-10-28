@@ -9,6 +9,14 @@ import { $, ago, clock, dayLabel, esc, nameOf, richText, toast } from "./util.js
 
 export const TRAINEES = ["comet", "orbit", "nova", "nebula", "zenith"];
 const MINUTES = () => state.training?.minutesPerDay ?? 12;
+/** A member's overnight minutes: twelve, or twenty-four for Nebula. */
+const BUDGET = (id) => memberOf(id)?.budget ?? (id === "nebula" ? 24 : MINUTES());
+const TEST = () => state.training?.testMinutes ?? 12;
+const hour = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric" });
+const windowText = () => {
+  const w = state.training?.window ?? { start: 1, end: 6 };
+  return `${hour(w.start)} to ${hour(w.end)}`;
+};
 
 const memberOf = (id) => state.training?.members.find((m) => m.member === id);
 const bodyOf = (id) => state.overview?.bodies?.find((b) => b.id === id);
@@ -30,7 +38,7 @@ function squadRings(size = 280) {
     const r = c - w / 2 - 4 - i * (w + gap);
     const len = 2 * Math.PI * r;
     const m = memberOf(id);
-    const frac = Math.min(1, (m?.minutesToday ?? 0) / MINUTES());
+    const frac = Math.min(1, (m?.minutesToday ?? 0) / BUDGET(id));
     return `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${hex(id)}" stroke-opacity=".12" stroke-width="${w}"/>
       ${frac <= 0 ? "" : `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${hex(id)}" stroke-width="${w}" stroke-linecap="round"
         stroke-dasharray="${(len * frac).toFixed(1)} ${len.toFixed(1)}" transform="rotate(-90 ${c} ${c})" class="${running(m) ? "ring-live" : ""}"/>`}`;
@@ -43,7 +51,7 @@ function ring(id, size = 44, stroke = 4) {
   const c = size / 2;
   const r = c - stroke / 2 - 1;
   const len = 2 * Math.PI * r;
-  const frac = Math.min(1, (m?.minutesToday ?? 0) / MINUTES());
+  const frac = Math.min(1, (m?.minutesToday ?? 0) / BUDGET(id));
   return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" class="mini-ring" aria-hidden="true">
     <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${hex(id)}" stroke-opacity=".14" stroke-width="${stroke}"/>
     ${frac <= 0 ? "" : `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${hex(id)}" stroke-width="${stroke}" stroke-linecap="round"
@@ -91,13 +99,15 @@ function delta(scores) {
 function statusLine(m) {
   if (!m?.joined) return `<span class="st"><span class="lamp never"></span>Hasn't joined Galaxy yet</span>`;
   if (running(m)) return `<span class="st live"><span class="lamp on live"></span>Training now</span>`;
-  if (m.minutesToday >= MINUTES() - 1) return `<span class="st"><span class="lamp on" style="--c:var(--good)"></span>Done for today</span>`;
-  if (m.minutesToday > 0) return `<span class="st"><span class="lamp"></span>${m.minutesToday} of ${MINUTES()} min today</span>`;
-  return `<span class="st"><span class="lamp"></span>${trainerOnline() ? "Up next today" : "Waiting for the trainer"}</span>`;
+  if (m.latest?.trigger === "night" && m.latest.day === state.training?.day && m.latest.status !== "running")
+    return `<span class="st"><span class="lamp on" style="--c:var(--good)"></span>Trained last night</span>`;
+  return `<span class="st"><span class="lamp"></span>${trainerOnline() ? `Tonight from ${esc(hour(state.training?.window?.start ?? 1))}` : "Waiting for the trainer"}</span>`;
 }
 
 const modeTag = (m) =>
-  m?.practises
+  m?.member === "nebula" && m?.practises
+    ? `<span class="mode own" title="Trains on its own hand simulator">${icon("live")}Own simulator</span>`
+    : m?.practises
     ? `<span class="mode own" title="Answers its drills itself, as a dry run">${icon("live")}Own answers</span>`
     : `<span class="mode" title="The trainer rehearses this member's answers">${icon("rehearse")}Rehearsed</span>`;
 
@@ -119,7 +129,7 @@ function traineeCard(id) {
     </div>
     <div class="t-chart">${scoreChart(id, scores, { w: 240, h: 56 })}</div>
     <div class="t-focus"><div class="label"><span>Working on</span><span>${m?.lessons ?? 0} lesson${m?.lessons === 1 ? "" : "s"}</span></div><p>${esc(m?.focus?.[0] ?? "Starts with its brief at the first session.")}</p></div>
-    <div class="t-foot">${statusLine(m)}<span class="t-min">${ring(id, 18, 2.5)}${m?.minutesToday ?? 0}<i>/${MINUTES()}</i></span></div>
+    <div class="t-foot">${statusLine(m)}<span class="t-min">${ring(id, 18, 2.5)}${m?.minutesToday ?? 0}<i>/${BUDGET(id)}</i></span></div>
   </a>`;
 }
 
@@ -137,7 +147,8 @@ const trainer = {
     focusTraining("");
     const t = state.training;
     const all = TRAINEES.map(memberOf).filter(Boolean);
-    const total = all.reduce((s, m) => s + Math.min(m.minutesToday, MINUTES()), 0);
+    const total = all.reduce((s, m) => s + Math.min(m.minutesToday, BUDGET(m.member)), 0);
+    const nightly = TRAINEES.reduce((s, id) => s + BUDGET(id), 0);
     const now = all.find(running);
     const feed = latestFromSessions();
     const avg = (() => {
@@ -149,7 +160,7 @@ const trainer = {
         <div>
           <div class="label date">Galaxy Trainer · ${esc(new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }))}</div>
           <h1>Practice makes <em>reliable</em></h1>
-          <div class="story">${MINUTES()} minutes a day with every member. Drills built from that day's real work, graded against what makes each one dependable, and turned into a playbook it reads before every job.</div>
+          <div class="story">Every night while you sleep, ${esc(windowText())}: ${MINUTES()} minutes with each member and ${BUDGET("nebula")} with Nebula. Simulations of real situations built from that day's work and aimed at each one's weak spots, graded, and turned into a playbook it reads before every job. Real work always comes first.</div>
           <div class="pills">
             <span class="pill"><span class="lamp ${trainerOnline() ? "on live" : ""}" style="--c:var(--trainer)"></span>${t ? (trainerOnline() ? "Trainer is running" : "Trainer isn't running") : "Connecting"}</span>
             ${now ? `<a class="pill attention-live" href="#/trainer/${now.member}">Training ${esc(nameOf(now.member))} now</a>` : ""}
@@ -158,11 +169,11 @@ const trainer = {
         </div>
         <div class="rings">
           ${squadRings()}
-          <div class="rings-center"><b>${total}</b><span>of ${MINUTES() * TRAINEES.length} min</span><span>today</span></div>
+          <div class="rings-center"><b>${total}</b><span>of ${nightly} min</span><span>last night</span></div>
         </div>
       </section>
 
-      <div class="ring-legend">${TRAINEES.map((id) => `<a href="#/trainer/${id}" data-body="${id}"><i></i>${esc(MEMBERS[id].name)}<span>${memberOf(id)?.minutesToday ?? 0}/${MINUTES()}</span></a>`).join("")}</div>
+      <div class="ring-legend">${TRAINEES.map((id) => `<a href="#/trainer/${id}" data-body="${id}"><i></i>${esc(MEMBERS[id].name)}<span>${memberOf(id)?.minutesToday ?? 0}/${BUDGET(id)}</span></a>`).join("")}</div>
 
       <div class="section">
         <div class="section-head"><h2>The squad</h2><span class="muted small">Scores are out of 100, from the last ${14} sessions</span></div>
@@ -184,16 +195,17 @@ const trainer = {
               </a>`,
                   )
                   .join("")
-              : `<div class="empty"><b>No sessions yet</b>The first ones run today${trainerOnline() ? "" : ", once the trainer is running"}.</div>`
+              : `<div class="empty"><b>No sessions yet</b>The first ones run tonight${trainerOnline() ? "" : ", once the trainer is running"}. To see one now, open a member and press Test session.</div>`
           }</div>
         </div>
         <div>
           <div class="section-head"><h2>How a session works</h2></div>
           <ol class="card steps">
-            <li><span class="n">01</span><div><b>Learn</b><p>Reads what the member really did since last time, and any note you left.</p></div></li>
-            <li><span class="n">02</span><div><b>Drill</b><p>Sets four to six drills from real situations. Always a dry run: the member says what it would do, and never does it.</p></div></li>
-            <li><span class="n">03</span><div><b>Grade</b><p>Scores each answer out of 10 against the member's rubric, with one thing to keep and one to change.</p></div></li>
+            <li><span class="n">01</span><div><b>Learn</b><p>Reads what the member really did that day, the notes you left, and where it scored worst.</p></div></li>
+            <li><span class="n">02</span><div><b>Simulate</b><p>Plays out real-world situations over several turns, with the trainer as the other side and twists along the way. Never the same drill twice, always aimed at the weak spots. A dry run: nothing is ever done for real.</p></div></li>
+            <li><span class="n">03</span><div><b>Grade</b><p>Scores each run out of 10 against the member's rubric, with one thing to keep and one to change.</p></div></li>
             <li><span class="n">04</span><div><b>Playbook</b><p>Rewrites up to twelve lessons the member reads in its prompt from then on. You can switch any of them off.</p></div></li>
+            <li><span class="n">05</span><div><b>Nebula's workout</b><p>Twenty-four minutes on its own hand simulator, perfect gestures and messy real ones, designed around the gestures it gets wrong.</p></div></li>
           </ol>
         </div>
       </div>
@@ -224,10 +236,25 @@ function threadHTML(id, list) {
       html += `<div class="tm note${fresh}"><div class="bubble"><div class="meta"><b>You</b><span>note to the trainer</span><time>${esc(clock(m.at))}</time></div><p>${richText(m.text)}</p></div></div>`;
     } else if (m.kind === "drill") {
       drillNo++;
-      const [title, ...rest] = m.text.split("\n");
+      let [title, ...rest] = m.text.split("\n");
       const body = rest.join("\n").trim();
-      html += `<div class="tm drill${fresh}"><div class="drill-card"><div class="drill-k">${icon("target")}Drill ${String(drillNo).padStart(2, "0")}<time>${esc(clock(m.at))}</time></div>
+      let label = `Drill ${String(drillNo).padStart(2, "0")}`;
+      let cls = "";
+      if (title.startsWith("Simulation · ")) {
+        label = `Simulation ${String(drillNo).padStart(2, "0")}`;
+        title = title.slice("Simulation · ".length);
+        cls = " sim";
+      } else if (title.startsWith("Workout · ")) {
+        label = title;
+        title = "Tonight's workout";
+        cls = " workout";
+      }
+      html += `<div class="tm drill${fresh}"><div class="drill-card${cls}"><div class="drill-k">${icon(cls === " sim" ? "rehearse" : cls ? "trainer" : "target")}${esc(label)}<time>${esc(clock(m.at))}</time></div>
         ${body ? `<h4>${esc(title)}</h4><p>${richText(body)}</p>` : `<p>${richText(title)}</p>`}</div></div>`;
+    } else if (m.kind === "sim") {
+      html += `<div class="tm world${fresh}"><div class="world-card"><div class="world-k">${icon("rehearse")}What happens next<time>${esc(clock(m.at))}</time></div><p>${richText(m.text)}</p></div></div>`;
+    } else if (m.kind === "results") {
+      html += resultsHTML(m, fresh);
     } else if (m.kind === "answer") {
       html += `<div class="tm answer${fresh}" data-body="${id}">${avatar(id, "sm")}<div class="bubble">
         <div class="meta"><b>${esc(nameOf(id))}</b>${m.rehearsal ? `<span class="tag">${icon("rehearse")}Rehearsed by the trainer</span>` : `<span class="tag own">${icon("live")}Its own answer</span>`}<time>${esc(clock(m.at))}</time></div>
@@ -260,7 +287,7 @@ function asideHTML(id) {
   let body = "";
   if (tab === "playbook") {
     body = on.length
-      ? `<p class="aside-note">What ${esc(nameOf(id))} reads in its prompt before every job. Switch off anything you disagree with; the trainer won't bring it back.</p>
+      ? `<p class="aside-note">${id === "nebula" ? "Rules the trainer builds Nebula's workouts around, and for you to check against how it really behaves." : `What ${esc(nameOf(id))} reads in its prompt before every job.`} Switch off anything you disagree with; the trainer won't bring it back.</p>
         <ol class="lessons">${on
           .map(
             (l, i) => `<li><span class="n">${String(i + 1).padStart(2, "0")}</span><p>${esc(l.text)}</p>
@@ -284,13 +311,38 @@ function asideHTML(id) {
       ? `<div class="history-chart">${scoreChart(id, scores, { w: 320, h: 96, axis: true })}</div>
         <ul class="sessions">${sessions
           .map(
-            (s) => `<li><div><b>${esc(dayLabel(s.startedAt))}</b><span>${s.status === "running" ? "In progress" : `${s.drills} drill${s.drills === 1 ? "" : "s"} · ${Math.max(1, Math.round(((s.endedAt || Date.now()) - s.startedAt) / 60000))} min`}</span>${s.summary ? `<p>${esc(s.summary)}</p>` : ""}</div>
+            (s) => `<li><div><b>${esc(dayLabel(s.startedAt))}${s.trigger === "test" ? ` <em class="test-tag">Test</em>` : ""}</b><span>${s.status === "running" ? "In progress" : `${s.drills} drill${s.drills === 1 ? "" : "s"} · ${Math.max(1, Math.round(((s.endedAt || Date.now()) - s.startedAt) / 60000))} min`}</span>${s.summary ? `<p>${esc(s.summary)}</p>` : ""}</div>
             ${s.status === "running" ? `<span class="score-pill live">Live</span>` : s.score !== null ? `<span class="score-pill ${scoreTone(s.score)}">${pct(s.score)}</span>` : `<span class="score-pill">${s.status === "failed" ? "—" : ""}</span>`}</li>`,
           )
           .join("")}</ul>`
       : `<div class="empty small">${icon("history")}<b>No sessions yet</b>Every session lands here with its score.</div>`;
   }
   return `<div class="tabs">${tabs.map(([k, label, n]) => `<button class="${tab === k ? "on" : ""}" data-tab="${k}">${label}${n !== "" ? `<span>${esc(String(n))}</span>` : ""}</button>`).join("")}</div><div class="tab-body">${body}</div>`;
+}
+
+/** Nebula's workout results: every gesture's accuracy, and what fired when it shouldn't have. */
+function resultsHTML(m, fresh) {
+  let r = null;
+  try {
+    r = JSON.parse(m.text);
+  } catch {}
+  if (!r?.gestures) return `<div class="tm summary${fresh}"><div class="summary-card"><p>${richText(m.text)}</p></div></div>`;
+  const rows = [...r.gestures].sort((a, b) => (a.accuracy ?? 0) - (b.accuracy ?? 0));
+  const pctOf = (v) => Math.round((v ?? 0) * 100);
+  return `<div class="tm results${fresh}"><div class="results-card">
+    <div class="results-head"><div class="label">Workout results</div>${typeof r.overall === "number" ? `<b class="${scoreTone(r.overall * 100)}">${pctOf(r.overall)}<i>%</i></b>` : ""}</div>
+    <div class="gesture-rows">${rows
+      .map(
+        (g) => `<div class="g-row"><span class="g-name">${esc(String(g.name).replaceAll("_", " "))}</span>
+        <span class="g-bar"><i class="${scoreTone((g.accuracy ?? 0) * 100)}" style="width:${pctOf(g.accuracy)}%"></i></span>
+        <span class="g-v">${pctOf(g.accuracy)}%</span>
+        <span class="g-meta">${g.samples ?? "?"} tries${g.falseFires ? ` · ${g.falseFires} false` : ""}${g.worstConditions?.length ? ` · worst: ${esc(g.worstConditions.slice(0, 2).join(", "))}` : ""}</span></div>`,
+      )
+      .join("")}</div>
+    ${r.negatives?.length ? `<div class="label" style="margin-top:14px">Must not fire</div><div class="neg-row">${r.negatives.map((n) => `<span class="chip ${n.falseFires ? "bad" : "good"}">${esc(n.name)} · ${n.falseFires ?? 0} false</span>`).join("")}</div>` : ""}
+    ${r.model ? `<p class="results-model">${r.model.replaced ? `New model kept: ${pctOf(r.model.before)}% → ${pctOf(r.model.after)}% on the fixed test.` : `Kept the current model${typeof r.model.before === "number" ? ` (${pctOf(r.model.before)}% on the fixed test)` : ""}: the new one wasn't better.`}</p>` : ""}
+    ${r.notes ? `<p class="results-notes">${richText(r.notes)}</p>` : ""}
+  </div></div>`;
 }
 
 function headHTML(id) {
@@ -301,19 +353,19 @@ function headHTML(id) {
   const week = scores.slice(-7);
   const avg = week.length ? pct(week.reduce((a, b) => a + b.score, 0) / week.length) : null;
   const sessions = d?.sessions?.length ?? 0;
-  const left = Math.max(0, MINUTES() - (m?.minutesToday ?? 0));
+  const lastNight = (d?.sessions ?? []).find((x) => x.trigger === "night");
   return `<section class="profile training-head">
       ${avatar(id, "xl", m?.joined ? "" : "off")}
       <div class="who">
         <div class="eyebrow"><span class="sense-pill">Training</span></div>
         <h1>${esc(MEMBERS[id]?.name ?? nameOf(id))}</h1>
         <p>${esc(MEMBERS[id]?.role ?? "")}</p>
-        <div class="pills">${statusLine(m)}<span class="pill">${m?.practises ? "Answers its own drills" : "Drills are rehearsed by the trainer"}</span>${d?.program ? `<span class="pill">Program v${d.program.version}</span>` : ""}</div>
+        <div class="pills">${statusLine(m)}<span class="pill">${id === "nebula" ? (m?.practises ? "Trains on its own simulator" : "Rehearsed until its simulator joins in") : m?.practises ? "Answers its own drills" : "Drills are rehearsed by the trainer"}</span>${d?.program ? `<span class="pill">Program v${d.program.version}</span>` : ""}</div>
       </div>
       <div class="now today-card">
-        <div class="label">Today</div>
-        <div class="today">${ring(id, 64, 6)}<div><b>${m?.minutesToday ?? 0}<i> of ${MINUTES()} min</i></b><span>${running(m) ? "Session in progress" : left ? `${left} min left today` : "Done for today"}</span></div></div>
-        <button class="btn primary" id="train-now" ${running(m) || !left || !m?.joined ? "disabled" : ""}>${icon("play")}${running(m) ? "Training now" : "Train now"}</button>
+        <div class="label">Overnight</div>
+        <div class="today">${ring(id, 64, 6)}<div><b>${m?.minutesToday ?? 0}<i> of ${BUDGET(id)} min</i></b><span>${running(m) ? "Session in progress" : lastNight ? `Last night: ${lastNight.score !== null ? `${pct(lastNight.score)}/100` : lastNight.status === "failed" ? "didn't finish" : "done"}` : `Every night, ${esc(windowText())}`}</span></div></div>
+        <button class="btn primary" id="train-now" title="A ${TEST()}-minute session now, for testing. It never runs over real work." ${running(m) || !m?.joined ? "disabled" : ""}>${icon("play")}${running(m) ? "Training now" : `Test session · ${TEST()} min`}</button>
       </div>
     </section>
     <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr))">
@@ -376,7 +428,7 @@ const training = {
         btn.disabled = true;
         try {
           const r = await api.trainNow(id);
-          toast(r?.trainerOnline ? `Starting ${nameOf(id)}'s session` : "Queued: the trainer isn't running yet");
+          toast(r?.trainerOnline ? `Starting a ${TEST()}-minute test session for ${nameOf(id)}` : "Queued: the trainer isn't running yet");
           poke();
         } catch (error) {
           toast(error.message);

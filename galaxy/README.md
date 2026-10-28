@@ -64,22 +64,29 @@ sudo chown -R $U "$D" && sudo chmod 700 "$D"
 
 ## Galaxy Trainer
 
-Twelve minutes a day with every member, so each one does what it does as reliably as it can.
+Every night, while you sleep, the trainer works with each member so it does what it does as reliably as
+it can: twelve minutes each, twenty-four for Nebula.
 
-- **A session** (`src/trainer/coach.ts`): the trainer reads what the member really did since last
-  time and any note you left, rewrites its program (focus, rubric, scenario bank), sets four to six
-  drills, grades each answer out of 10, and rewrites the member's **playbook**: up to twelve lessons
-  that go into that member's own prompt through `/v1/context`.
-- **Drills are dry runs.** Comet, Nova and Zenith answer their own drills with their real brain and
-  no tools (power `practice`). Orbit and Nebula are rehearsed by the trainer, and marked as such.
-- **Cost:** the trainer runs `claude -p` on your Max plan (never an API key), with no tools.
-  Nova answers its drills with its own API key, the same way it answers you (a few short calls a day).
-- **Where to watch:** the Trainer space in Galaxy Link (sidebar, ⌘9), or **Galaxy Trainer.app**, the
-  same space as its own app. Every member has a live 1:1 with the trainer; leave notes there, switch
-  off any lesson you disagree with, or start a session with *Train now* (it still counts against the
-  member's twelve minutes).
-- **Settings** (environment of `ai.galaxy.trainer`): `GALAXY_TRAINER_MINUTES` (12),
-  `GALAXY_TRAINER_HOUR` (10: sessions start from 10:00, and catch up if the Mac was asleep),
-  `GALAXY_TRAINER_MODEL` (sonnet).
-- `galaxy/install.sh` installs it as the login agent `ai.galaxy.trainer`; `install-all.sh` also builds
-  Galaxy Trainer.app (`app/build-app.sh --trainer --install`).
+- **When:** only inside the overnight window (`GALAXY_TRAINER_WINDOW`, default `1-6`: 1am to 6am), one
+  member at a time, and **never over real work**: a member doing a task isn't started, and if one picks
+  up a task mid-session the drills stop there.
+- **Test sessions:** *Test session · 12 min* on a member's training page, or `galaxy train <member>`,
+  runs a twelve-minute session straight away. It doesn't use up that member's night.
+- **A session** (`src/trainer/coach.ts`): the trainer reads what the member really did that day, your
+  notes, and where it scored worst, then designs new drills aimed at those weak spots (never the same
+  drill twice). Most are **simulations**: a real situation played out over several turns, with the
+  trainer as the other side (the person texting, the Mac's screen, a website) springing twists. Each run
+  is graded out of 10, and the member's **playbook** (up to twelve lessons it reads in its prompt) is
+  rewritten.
+- **Dry runs only.** Comet, Nova and Zenith answer with their own brain and no tools (power `practice`).
+  Orbit is rehearsed by the trainer and is never made to speak.
+- **Nebula** trains on its own hand simulator: the trainer designs a workout (the gestures it gets wrong,
+  messy real-world conditions, everyday movements that must not fire) and Nebula reports per-gesture
+  results. Protocol: [TRAINER_NEBULA.md](TRAINER_NEBULA.md). Until Nebula supports it, it's rehearsed.
+- **Cost:** `claude -p` on your Max plan, never an API key, with no tools. Nova answers with its own API
+  key, as it answers you.
+- **Where to watch:** the Trainer space in Galaxy Link (⌘9), or **Galaxy Trainer.app**. Every member has a
+  live 1:1 with the trainer; leave notes, switch off lessons, start a test session.
+- `galaxy trainer reset` wipes all training (every member starts again from its brief).
+- Settings (environment of `ai.galaxy.trainer`): `GALAXY_TRAINER_WINDOW` (`1-6`), `GALAXY_TRAINER_MODEL`
+  (`sonnet`). Its log: `~/Library/Application Support/Galaxy/trainer.log`.

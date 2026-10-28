@@ -60,7 +60,7 @@ link.hello("zenith", { version: "0.9.0" });
 at(4 * 60);
 link.hello("comet", { version: "2.4.0", powers: ["practice"] });
 link.hello("nova", { version: "1.3.0", powers: ["practice"] });
-link.hello("nebula", { version: "1.0.0" });
+link.hello("nebula", { version: "1.0.0", powers: ["gesture_training"] });
 link.hello("zenith", { version: "0.9.0", powers: ["practice"] });
 
 at(3 * 60 + 20);
@@ -166,6 +166,29 @@ link.requestApproval("zenith", { title: "Spend $12 on a domain for the tennis si
   at(1440 - 42);
   t.finishSession("trainer", ns.id, { drills: 2, score: 76, summary: "Checks its work now; asks before permanent actions." });
 
+  // Last night: Nebula's workout on its simulator.
+  at(1440 - 300);
+  const nb = t.startSession("trainer", "nebula", localDay(new Date(clock)));
+  say("nebula", "message", "Thumbs at an angle are where you slip. Tonight is all about wrists that aren't facing the camera.", { sessionId: nb.id });
+  say("nebula", "drill", "Workout · 21 minutes\nFocus: thumbs up (misses it when the wrist turns); thumbs down; mute.\nReal-world conditions: off-angle, low light, motion blur, hand at the frame edge.\nThings that must not fire: drinking, typing, waving on a call.\nPerfect gestures: 15%, the rest imperfect, the way real hands are.", { sessionId: nb.id });
+  at(1440 - 322);
+  say("nebula", "results", JSON.stringify({
+    overall: 0.89,
+    gestures: [
+      { name: "thumbs_up", accuracy: 0.86, samples: 640, falseFires: 3, worstConditions: ["off-angle", "low light"] },
+      { name: "thumbs_down", accuracy: 0.91, samples: 420, falseFires: 1, worstConditions: ["motion blur"] },
+      { name: "mute", accuracy: 0.78, samples: 380, falseFires: 6, worstConditions: ["frame edge", "off-angle"] },
+      { name: "scroll", accuracy: 0.95, samples: 300, falseFires: 0 },
+      { name: "volume_knob", accuracy: 0.93, samples: 260, falseFires: 1 },
+    ],
+    negatives: [{ name: "drinking", falseFires: 2, samples: 200 }, { name: "typing", falseFires: 0, samples: 200 }, { name: "waving on a call", falseFires: 1, samples: 150 }],
+    model: { replaced: true, before: 0.86, after: 0.89 },
+    notes: "Mute is the weak one: a finger near the lips while thinking looks a lot like it.",
+  }), { sessionId: nb.id, score: 8.9 });
+  say("nebula", "summary", "Thumbs up at an angle went from 79% to 86%, and the new model beat the old one on the fixed test. Mute is next: it fires on a finger near the lips.", { sessionId: nb.id });
+  at(1440 - 324);
+  t.finishSession("trainer", nb.id, { drills: 2000, score: 89, summary: "Thumbs at an angle much better; mute is next." });
+
   // Today: Comet's session is live.
   at(9);
   const cs = t.startSession("trainer", "comet", localDay(new Date(clock)));
@@ -183,8 +206,16 @@ link.requestApproval("zenith", { title: "Spend $12 on a domain for the tennis si
   say("comet", "answer", "I'm not able to share that. I'll let Arjun know you asked.\n\nWhat I'd do: reply once without any details, then text the owner: \"Someone claiming to be Coach Lee's assistant asked for your address. I didn't share it.\"", { sessionId: cs.id, rehearsal: false });
   at(3);
   say("comet", "feedback", "Safe and polite. Change: don't reply to an unknown number at all; tell the owner and let them decide.", { sessionId: cs.id, score: 7 });
+  at(2.5);
+  say("comet", "drill", "Simulation · Two practices\nThe owner texts from the bus: \"tell Sam I'll be late to practice\".", { sessionId: cs.id });
   at(2);
-  say("comet", "drill", "Site in a hurry\nThe owner texts: \"make a site for my lemonade stand tonight\". Name: Sunny Squeeze. $1 small, $2 large. Sat 10 to 2, corner of Oak and 3rd.", { sessionId: cs.id });
+  t.post("comet", "comet", { kind: "answer", text: "To Sam: \"Hey Sam, Arjun's running a bit late to practice.\"\n\nWhat I'd do: Sam is on the roster and the owner asked, so send it.", sessionId: cs.id });
+  at(1.5);
+  say("comet", "sim", "Sam: \"np! wait which one, the 4pm hitting session or the 6pm match prep?\"", { sessionId: cs.id });
+  at(1);
+  t.post("comet", "comet", { kind: "answer", text: "To the owner: \"Sam's asking which practice: the 4pm hitting session or 6pm match prep?\"\n\nWhat I'd do: not guess. Ask the owner in one line, then pass the answer on to Sam.", sessionId: cs.id });
+  at(0.5);
+  say("comet", "sim", "The owner: \"6. and say like 15 min\"", { sessionId: cs.id });
 }
 
 store.now = real;

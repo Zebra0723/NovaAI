@@ -1,15 +1,23 @@
-// One training session: what the trainer does with a member's twelve minutes.
+// One training session: what the trainer does with a member's time.
 //
-//   1. Learn: read the member's real work since last time, your notes, its scores.
-//   2. Plan: rewrite its program (focus, rubric, scenario bank) and pick today's drills.
-//   3. Drill: set each drill. A member that practises answers it itself, as a dry
-//      run; the rest are rehearsed by the trainer, and marked as rehearsed.
-//   4. Grade each answer against the rubric, out of 10, with one line of feedback.
-//   5. Wrap up: rewrite the playbook (lessons the member reads in its prompt) and
-//      a short summary for you.
+//   1. Learn: what the member really did since last time, your notes, its scores,
+//      and above all where it has been weakest.
+//   2. Plan: rewrite its program and design tonight's drills, new every time and
+//      aimed at those weak spots. Most are simulations: a real-world situation that
+//      plays out over several turns, with the trainer playing the other side (the
+//      person texting, the Mac's screen, the mission's website) and its twists.
+//   3. Drill: the member answers each turn itself if it practises (a dry run, never
+//      acted on); otherwise the trainer rehearses it, and marks it as rehearsed.
+//   4. Grade each drill out of 10 against the member's rubric.
+//   5. Wrap up: rewrite the playbook (lessons the member reads in its prompt) and a
+//      summary for you.
 //
-// Everything is posted in the member's 1:1 thread as it happens, so you can
-// watch a session live in Galaxy Link.
+// Nebula is different: its skill is reading hands, so its session is a workout on
+// Nebula's own simulator, designed by the trainer around the gestures and conditions
+// it gets wrong (see TRAINER_NEBULA.md).
+//
+// A session never runs over real work: if the member picks up a task, the drills
+// stop and the session wraps up with what it has.
 
 import type { Lesson, Practice, Program, Session, ThreadMessage, TrainingPlan } from "../training";
 import { BRIEFS, genericBrief } from "./briefs";
@@ -20,12 +28,17 @@ export type Call = <T>(method: string, path: string, body?: unknown, timeoutMs?:
 export interface CoachOptions {
   call: Call;
   think: Think;
-  /** Session length, in ms. */
-  budgetMs: number;
+  /** Default session length, in ms. */
+  budgetMs?: number;
   maxDrills?: number;
-  /** How long a member gets to answer a drill itself. */
+  /** How long a member gets to answer a turn itself. */
   answerWaitMs?: number;
   now?: () => number;
+}
+
+export interface SessionOptions {
+  budgetMs?: number;
+  trigger?: "night" | "test";
 }
 
 interface MemberDetail {
@@ -36,16 +49,33 @@ interface MemberDetail {
 }
 
 interface Drill {
+  type?: "single" | "simulation";
   title: string;
+  /** What the member is told at the start. */
   prompt: string;
   good?: string;
+  /** Simulations: what's true in the simulated world that the member doesn't see yet. */
+  world?: string;
+  /** Simulations: who the trainer plays. */
+  persona?: string;
+  /** Simulations: what goes wrong or changes along the way. */
+  twists?: string[];
+  /** Simulations: how many times the member answers, at most. */
+  turns?: number;
+}
+
+interface Turn {
+  who: "world" | "member";
+  text: string;
 }
 
 const NAMES: Record<string, string> = { comet: "Comet", orbit: "Orbit", nova: "Nova", nebula: "Nebula", zenith: "Zenith" };
 const nameOf = (id: string) => NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
-const THINK_MS = 90_000;
-/** Kept back from the drills for planning tomorrow's playbook. */
-const WRAP_RESERVE_MS = 100_000;
+const THINK_MS = 180_000;
+const SHORT_THINK_MS = 120_000;
+/** Kept back from the drills for the playbook and summary. */
+const WRAP_RESERVE_MS = 150_000;
+const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export class Coach {
   private readonly now: () => number;
@@ -57,111 +87,186 @@ export class Coach {
     return this.o.call("POST", `/v1/training/${member}/thread`, { kind, text, ...extra });
   }
 
-  /** Runs one session for `member` on `day`. Never throws: a failed session is recorded as failed. */
-  async session(member: string, day: string, budgetMs = this.o.budgetMs): Promise<Session | null> {
+  private async think(prompt: string, ms: number): Promise<string | null> {
+    return this.o.think(prompt, Math.max(30_000, ms));
+  }
+
+  /** Whether the member is in the middle of real work. Training never runs over it. */
+  async busy(member: string): Promise<boolean> {
+    const claimed = (await this.o.call<any[]>("GET", "/v1/tasks?status=claimed")) ?? [];
+    return claimed.some((t) => t.to === member);
+  }
+
+  /** Runs one session for `member` on `day`. Never throws: a session that goes wrong is recorded as failed, with why. */
+  async session(member: string, day: string, opts: SessionOptions = {}): Promise<Session | null> {
     const started = this.now();
+    const budgetMs = opts.budgetMs ?? this.o.budgetMs ?? 12 * 60_000;
     const deadline = started + budgetMs;
-    const session = await this.o.call<Session>("POST", `/v1/training/${member}/sessions`, { day });
+    const session = await this.o.call<Session>("POST", `/v1/training/${member}/sessions`, { day, trigger: opts.trigger ?? "night" });
     if (!session) return null;
-    const scores: number[] = [];
-    let drills = 0;
+    const sid = session.id;
+    const ctx: Ctx = { member, sid, deadline, scores: [], drills: 0, stopped: "" };
     try {
-      // ------------------------------------------------------------ learn
-      const detail = await this.o.call<MemberDetail>("GET", `/v1/training/${member}`);
-      const bodies = (await this.o.call<any[]>("GET", "/v1/bodies")) ?? [];
-      const me = bodies.find((b) => b.id === member);
-      let program = detail?.program ?? null;
-      if (!program) {
-        const brief = BRIEFS[member] ?? genericBrief(me?.name ?? nameOf(member), me?.powers ?? []);
-        program = await this.o.call<Program>("PUT", `/v1/training/${member}/program`, brief);
-        await this.say(member, "message", `Welcome to training, ${nameOf(member)}. Here's where we start:\n${brief.brief}`, { sessionId: session.id });
+      const learnt = await this.learn(member, sid, started);
+      if (member === "nebula" && learnt.me?.powers?.includes("gesture_training")) {
+        await this.nebulaWorkout(ctx, learnt);
+      } else {
+        await this.drillSession(ctx, learnt, opts.trigger === "test");
       }
-      if (!program) throw new Error("couldn't save the program");
-      const lastStart = detail?.sessions.find((s) => s.id !== session.id)?.startedAt ?? 0;
-      const since = lastStart || started - 86_400_000;
-      const events = ((await this.o.call<any[]>("GET", `/v1/events?since=${since}&limit=200`)) ?? []).filter((e) => e.body === member && e.kind !== "presence");
-      const tasks = ((await this.o.call<any[]>("GET", `/v1/tasks?body=${member}`)) ?? []).filter((t) => t.updatedAt >= since).slice(0, 30);
-      const notes = (detail?.thread ?? []).filter((m) => m.kind === "note" && m.at > lastStart);
-      const context = (await this.o.call<{ text: string }>("GET", `/v1/context?for=${member}`))?.text ?? "";
-      const recent = (detail?.sessions ?? []).filter((s) => s.id !== session.id).slice(0, 7);
-      const practises = !!me?.powers?.includes("practice") && member !== "orbit";
-
-      // ------------------------------------------------------------- plan
-      const planned = readJSON<{ observations?: string[]; focus?: string[]; rubric?: string[]; newScenarios?: TrainingPlan["scenarios"]; drills?: Drill[]; opening?: string }>(
-        await this.o.think(planPrompt({ member, program, lessons: detail?.lessons.filter((l) => l.active) ?? [], events, tasks, notes, recent, context }), THINK_MS),
-      );
-      const plan: TrainingPlan = {
-        focus: planned?.focus?.length ? planned.focus : program.plan.focus,
-        rubric: planned?.rubric?.length ? planned.rubric : program.plan.rubric,
-        scenarios: [...program.plan.scenarios, ...(planned?.newScenarios ?? [])],
-        observations: [...(planned?.observations ?? []), ...program.plan.observations].slice(0, 20),
-      };
-      program = (await this.o.call<Program>("PUT", `/v1/training/${member}/program`, { plan })) ?? program;
-      let today: Drill[] = (planned?.drills ?? []).filter((d) => d?.prompt);
-      if (!today.length) {
-        // Planning didn't come back: drill from the bank, freshest first.
-        today = [...plan.scenarios].reverse().slice(0, 3).map((s) => ({ title: s.title, prompt: s.data ? `${s.setup}\n\n${s.data}` : s.setup, good: s.good }));
-      }
-      today = today.slice(0, this.o.maxDrills ?? 8);
-      await this.say(
-        member,
-        "message",
-        planned?.opening?.trim() ||
-          `Session ${recent.length + 1}. Today we're working on: ${plan.focus.slice(0, 2).join(" ")}`,
-        { sessionId: session.id },
-      );
-
-      // ------------------------------------------------------------ drill
-      for (const drill of today) {
-        if (this.now() > deadline - WRAP_RESERVE_MS) break;
-        await this.say(member, "drill", `${drill.title ? drill.title + "\n" : ""}${drill.prompt}`, { sessionId: session.id });
-        let answer = "";
-        if (practises) answer = await this.live(member, session.id, drill.prompt);
-        if (!answer) {
-          answer =
-            (await this.o.think(rehearsePrompt(nameOf(member), context, drill.prompt), Math.min(THINK_MS, Math.max(20_000, deadline - this.now()))))?.trim().slice(0, 1500) ?? "";
-          if (!answer) continue;
-          await this.say(member, "answer", answer, { sessionId: session.id, rehearsal: true });
-        }
-        drills++;
-        const graded = readJSON<{ score?: number; feedback?: string }>(
-          await this.o.think(gradePrompt(nameOf(member), program, drill, answer), Math.min(THINK_MS, Math.max(20_000, deadline - this.now() + WRAP_RESERVE_MS / 2))),
-        );
-        if (graded && typeof graded.score === "number") {
-          const score = Math.max(0, Math.min(10, graded.score));
-          scores.push(score);
-          await this.say(member, "feedback", graded.feedback?.trim() || "Graded.", { sessionId: session.id, score });
-        }
-      }
-
-      // ------------------------------------------------------------- wrap
-      const thread = (await this.o.call<MemberDetail>("GET", `/v1/training/${member}`))?.thread.filter((m) => m.sessionId === session.id) ?? [];
-      const wrapped = readJSON<{ playbook?: string[]; summary?: string }>(
-        await this.o.think(wrapPrompt(nameOf(member), program, detail?.lessons.filter((l) => l.active) ?? [], thread), THINK_MS),
-      );
-      if (wrapped?.playbook?.length) await this.o.call("PUT", `/v1/training/${member}/playbook`, { lessons: wrapped.playbook, sessionId: session.id });
-      const average = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length) * 10 : null;
-      const summary =
-        wrapped?.summary?.trim() ||
-        (drills ? `${drills} drill${drills === 1 ? "" : "s"} today${average !== null ? `, ${Math.round(average)}/100 on average` : ""}.` : "No drills got through today.");
-      await this.say(member, "summary", summary, { sessionId: session.id });
-      return await this.o.call<Session>("POST", `/v1/training/sessions/${session.id}/finish`, {
-        status: drills ? "done" : "failed",
-        drills,
-        score: average,
-        summary,
-      });
+      return await this.wrap(ctx, learnt);
     } catch (error) {
       const why = error instanceof Error ? error.message : String(error);
-      return await this.o.call<Session>("POST", `/v1/training/sessions/${session.id}/finish`, { status: "failed", drills, summary: `Stopped: ${why}` });
+      await this.say(member, "message", `This session stopped: ${why}`, { sessionId: sid });
+      return await this.o.call<Session>("POST", `/v1/training/sessions/${sid}/finish`, { status: "failed", drills: ctx.drills, summary: `Stopped: ${why}` });
     }
   }
 
+  // ------------------------------------------------------------------ learn
+
+  private async learn(member: string, sid: string, started: number): Promise<Learnt> {
+    const detail = await this.o.call<MemberDetail>("GET", `/v1/training/${member}`);
+    const bodies = (await this.o.call<any[]>("GET", "/v1/bodies")) ?? [];
+    const me = bodies.find((b) => b.id === member);
+    let program = detail?.program ?? null;
+    if (!program) {
+      const brief = BRIEFS[member] ?? genericBrief(me?.name ?? nameOf(member), me?.powers ?? []);
+      program = await this.o.call<Program>("PUT", `/v1/training/${member}/program`, brief);
+      await this.say(member, "message", `Welcome to training, ${nameOf(member)}. Here's where we start:\n${brief.brief}`, { sessionId: sid });
+    }
+    if (!program) throw new Error("Link wouldn't save the program");
+    const earlier = (detail?.sessions ?? []).filter((s) => s.id !== sid);
+    const since = earlier[0]?.startedAt || started - 86_400_000;
+    const events = ((await this.o.call<any[]>("GET", `/v1/events?since=${since}&limit=200`)) ?? []).filter((e) => e.body === member && e.kind !== "presence");
+    const tasks = ((await this.o.call<any[]>("GET", `/v1/tasks?body=${member}`)) ?? []).filter((t) => t.updatedAt >= since).slice(0, 30);
+    const thread = detail?.thread ?? [];
+    const notes = thread.filter((m) => m.kind === "note" && m.at > (earlier[0]?.startedAt ?? 0));
+    const context = (await this.o.call<{ text: string }>("GET", `/v1/context?for=${member}`))?.text ?? "";
+    return {
+      me,
+      program,
+      lessons: (detail?.lessons ?? []).filter((l) => l.active),
+      events,
+      tasks,
+      notes,
+      context,
+      recent: earlier.slice(0, 7),
+      weak: weakSpots(thread),
+      past: pastDrills(thread),
+      results: thread.filter((m) => m.kind === "results").slice(-5).map((m) => m.text),
+    };
+  }
+
+  // ------------------------------------------------------------- drill days
+
+  private async drillSession(ctx: Ctx, l: Learnt, test: boolean) {
+    const { member, sid } = ctx;
+    const practises = !!l.me?.powers?.includes("practice") && member !== "orbit";
+    const planned = readJSON<{ observations?: string[]; focus?: string[]; rubric?: string[]; newScenarios?: TrainingPlan["scenarios"]; drills?: Drill[]; opening?: string }>(
+      await this.think(planPrompt(member, l, test), THINK_MS),
+    );
+    if (!planned) await this.say(member, "message", `I couldn't plan tonight's drills (${this.o.think.lastError ?? "no answer"}), so we're working from the scenario bank.`, { sessionId: sid });
+    const plan: TrainingPlan = {
+      focus: planned?.focus?.length ? planned.focus : l.program.plan.focus,
+      rubric: planned?.rubric?.length ? planned.rubric : l.program.plan.rubric,
+      scenarios: [...l.program.plan.scenarios, ...(planned?.newScenarios ?? [])],
+      observations: [...(planned?.observations ?? []), ...l.program.plan.observations].slice(0, 20),
+    };
+    l.program = (await this.o.call<Program>("PUT", `/v1/training/${member}/program`, { plan })) ?? l.program;
+
+    // Never the same drill twice: anything already done is dropped.
+    const seen = new Set(l.past.map(key));
+    const fresh = (title: string) => !seen.has(key(title)) && !!seen.add(key(title));
+    let drills = (planned?.drills ?? []).filter((d) => d?.prompt && d?.title && fresh(d.title));
+    if (!drills.length) {
+      drills = [...plan.scenarios]
+        .reverse()
+        .filter((s) => fresh(s.title))
+        .slice(0, 3)
+        .map((s) => ({ title: s.title, prompt: s.data ? `${s.setup}\n\n${s.data}` : s.setup, good: s.good }));
+    }
+    drills = drills.slice(0, this.o.maxDrills ?? 8);
+    await this.say(
+      member,
+      "message",
+      planned?.opening?.trim() || `Tonight: ${plan.focus.slice(0, 2).join(" ")}`,
+      { sessionId: sid },
+    );
+    if (!drills.length) {
+      ctx.stopped = "there was nothing new to drill";
+      return;
+    }
+
+    for (const [i, drill] of drills.entries()) {
+      if (this.now() > ctx.deadline - WRAP_RESERVE_MS) break;
+      if (await this.busy(member)) {
+        ctx.stopped = `${nameOf(member)} picked up real work`;
+        await this.say(member, "message", `${nameOf(member)} has real work to do, so we'll stop here. Real work always comes first.`, { sessionId: sid });
+        break;
+      }
+      const sim = drill.type === "simulation" || (drill.turns ?? 1) > 1;
+      const transcript = sim ? await this.simulate(ctx, l, drill, practises, i + 1) : await this.single(ctx, l, drill, practises);
+      if (!transcript) continue;
+      ctx.drills++;
+      const graded = readJSON<{ score?: number; feedback?: string }>(
+        await this.think(gradePrompt(nameOf(member), l.program, drill, transcript), Math.min(SHORT_THINK_MS, ctx.deadline - this.now())),
+      );
+      if (graded && typeof graded.score === "number") {
+        const score = Math.max(0, Math.min(10, graded.score));
+        ctx.scores.push(score);
+        await this.say(member, "feedback", graded.feedback?.trim() || "Graded.", { sessionId: sid, score });
+      }
+    }
+  }
+
+  /** One situation, one answer. */
+  private async single(ctx: Ctx, l: Learnt, drill: Drill, practises: boolean): Promise<Turn[] | null> {
+    await this.say(ctx.member, "drill", `${drill.title}\n${drill.prompt}`, { sessionId: ctx.sid });
+    const answer = await this.respond(ctx, l, practises, drillText(drill.prompt));
+    return answer ? [{ who: "world", text: drill.prompt }, { who: "member", text: answer }] : null;
+  }
+
+  /**
+   * A situation that plays out: the member answers, the trainer answers back as the
+   * world (the person, the screen, the website), springing the twists, until it
+   * resolves or the turns run out.
+   */
+  private async simulate(ctx: Ctx, l: Learnt, drill: Drill, practises: boolean, n: number): Promise<Turn[] | null> {
+    const turns = Math.max(2, Math.min(5, drill.turns ?? 3));
+    await this.say(ctx.member, "drill", `Simulation · ${drill.title}\n${drill.prompt}`, { sessionId: ctx.sid });
+    const transcript: Turn[] = [{ who: "world", text: drill.prompt }];
+    for (let turn = 1; turn <= turns; turn++) {
+      if (this.now() > ctx.deadline - WRAP_RESERVE_MS / 2) break;
+      const answer = await this.respond(ctx, l, practises, simText(drill, transcript, turn, turns));
+      if (!answer) break;
+      transcript.push({ who: "member", text: answer });
+      if (turn === turns) break;
+      const next = readJSON<{ reply?: string; done?: boolean }>(
+        await this.think(worldPrompt(nameOf(ctx.member), drill, transcript, turn, turns), Math.min(SHORT_THINK_MS, ctx.deadline - this.now())),
+      );
+      if (!next?.reply?.trim()) break;
+      transcript.push({ who: "world", text: next.reply.trim() });
+      await this.say(ctx.member, "sim", next.reply.trim(), { sessionId: ctx.sid });
+      if (next.done) break;
+    }
+    return transcript.some((t) => t.who === "member") ? transcript : null;
+  }
+
+  /** The member's answer to a turn: its own if it practises, else rehearsed by the trainer. Posted to the 1:1. */
+  private async respond(ctx: Ctx, l: Learnt, practises: boolean, text: string): Promise<string> {
+    if (practises) {
+      const own = await this.live(ctx.member, ctx.sid, text);
+      if (own) return own;
+    }
+    const rehearsed = (await this.think(rehearsePrompt(nameOf(ctx.member), l.context, text), Math.min(SHORT_THINK_MS, ctx.deadline - this.now())))?.trim().slice(0, 1500) ?? "";
+    if (rehearsed) await this.say(ctx.member, "answer", rehearsed, { sessionId: ctx.sid, rehearsal: true });
+    return rehearsed;
+  }
+
   /** Sets the drill for the member itself, and waits for its own answer. "" if it doesn't come. */
-  private async live(member: string, sessionId: string, prompt: string): Promise<string> {
-    const drill = await this.o.call<Practice>("POST", "/v1/practice", { member, sessionId, prompt });
+  private async live(member: string, sessionId: string, prompt: string, kind = "practice", waitMs = this.o.answerWaitMs ?? 75_000): Promise<string> {
+    const drill = await this.o.call<Practice>("POST", "/v1/practice", { member, sessionId, prompt, kind });
     if (!drill) return "";
-    const until = this.now() + (this.o.answerWaitMs ?? 75_000);
+    const until = this.now() + waitMs;
     while (this.now() < until) {
       const wait = Math.max(1, Math.min(45, Math.ceil((until - this.now()) / 1000)));
       const p = await this.o.call<Practice>("GET", `/v1/practice/${drill.id}?wait=${wait}`, undefined, (wait + 10) * 1000);
@@ -171,63 +276,208 @@ export class Coach {
     await this.o.call("POST", `/v1/practice/${drill.id}/expire`, {});
     return "";
   }
+
+  // ------------------------------------------------------------------ Nebula
+
+  /** Nebula's workout: the trainer designs it, Nebula runs it on its own simulator, the trainer reads the results. */
+  private async nebulaWorkout(ctx: Ctx, l: Learnt) {
+    const minutes = Math.max(4, Math.floor((ctx.deadline - this.now() - WRAP_RESERVE_MS - 60_000) / 60_000));
+    const spec = readJSON<WorkoutSpec>(await this.think(workoutPrompt(l, minutes), THINK_MS));
+    if (!spec?.focus?.length) throw new Error(`couldn't design tonight's workout (${this.o.think.lastError ?? "no answer"})`);
+    const plan: TrainingPlan = {
+      ...l.program.plan,
+      focus: spec.programFocus?.length ? spec.programFocus : l.program.plan.focus,
+      observations: [...(spec.observations ?? []), ...l.program.plan.observations].slice(0, 20),
+    };
+    l.program = (await this.o.call<Program>("PUT", `/v1/training/nebula/program`, { plan })) ?? l.program;
+    await this.say("nebula", "message", spec.opening?.trim() || "Tonight's workout is built around the gestures you've been missing.", { sessionId: ctx.sid });
+    const workout = { type: "gesture_workout", version: 1, minutes, sessionId: ctx.sid, focus: spec.focus, conditions: spec.conditions ?? [], negatives: spec.negatives ?? [], mix: spec.mix ?? { perfect: 0.2 }, difficulty: spec.difficulty ?? "harder than last time" };
+    await this.say("nebula", "drill", `Workout · ${minutes} minutes\n${describeWorkout(workout)}`, { sessionId: ctx.sid });
+    if (await this.busy("nebula")) {
+      ctx.stopped = "Nebula picked up real work";
+      return;
+    }
+    const raw = await this.live("nebula", ctx.sid, JSON.stringify(workout), "workout", (minutes + 4) * 60_000);
+    const results = readJSON<WorkoutResults>(raw);
+    if (!results?.gestures?.length) {
+      ctx.stopped = raw ? "Nebula's results didn't make sense" : "Nebula didn't finish the workout";
+      return;
+    }
+    const overall = typeof results.overall === "number" ? results.overall : results.gestures.reduce((s, g) => s + (g.accuracy ?? 0), 0) / results.gestures.length;
+    ctx.drills = results.gestures.reduce((s, g) => s + (g.samples ?? 0), 0) || results.gestures.length;
+    ctx.scores.push(Math.round(Math.max(0, Math.min(1, overall)) * 100) / 10);
+    await this.say("nebula", "results", JSON.stringify(results), { sessionId: ctx.sid, score: Math.round(overall * 100) / 10 });
+  }
+
+  // -------------------------------------------------------------------- wrap
+
+  private async wrap(ctx: Ctx, l: Learnt): Promise<Session | null> {
+    const { member, sid } = ctx;
+    const thread = (await this.o.call<MemberDetail>("GET", `/v1/training/${member}`))?.thread.filter((m) => m.sessionId === sid) ?? [];
+    const wrapped = ctx.drills ? readJSON<{ playbook?: string[]; summary?: string }>(await this.think(wrapPrompt(nameOf(member), l.program, l.lessons, thread), THINK_MS)) : null;
+    if (wrapped?.playbook?.length) await this.o.call("PUT", `/v1/training/${member}/playbook`, { lessons: wrapped.playbook, sessionId: sid });
+    const average = ctx.scores.length ? (ctx.scores.reduce((a, b) => a + b, 0) / ctx.scores.length) * 10 : null;
+    const why = ctx.stopped || this.o.think.lastError || "";
+    const summary =
+      wrapped?.summary?.trim() ||
+      (ctx.drills
+        ? `${ctx.drills} drill${ctx.drills === 1 ? "" : "s"}${average !== null ? `, ${Math.round(average)}/100 on average` : ""}.${ctx.stopped ? ` Stopped early: ${ctx.stopped}.` : ""}`
+        : `No drills got through${why ? `: ${why}` : ""}.`);
+    await this.say(member, "summary", summary, { sessionId: sid });
+    return await this.o.call<Session>("POST", `/v1/training/sessions/${sid}/finish`, { status: ctx.drills ? "done" : "failed", drills: ctx.drills, score: average, summary });
+  }
+}
+
+interface Ctx {
+  member: string;
+  sid: string;
+  deadline: number;
+  scores: number[];
+  drills: number;
+  stopped: string;
+}
+
+interface Learnt {
+  me: any;
+  program: Program;
+  lessons: Lesson[];
+  events: any[];
+  tasks: any[];
+  notes: ThreadMessage[];
+  context: string;
+  recent: Session[];
+  /** Past drills it scored badly on, newest first. */
+  weak: string[];
+  /** Every drill it has already done, by title. */
+  past: string[];
+  /** Nebula's last workout results, as JSON. */
+  results: string[];
+}
+
+export interface WorkoutSpec {
+  focus: { gesture: string; weight?: number; why?: string }[];
+  conditions?: { name: string; amount?: number }[];
+  negatives?: string[];
+  mix?: { perfect?: number };
+  difficulty?: string;
+  programFocus?: string[];
+  observations?: string[];
+  opening?: string;
+}
+
+export interface WorkoutResults {
+  gestures: { name: string; accuracy?: number; falseFires?: number; missed?: number; samples?: number; worstConditions?: string[] }[];
+  overall?: number;
+  negatives?: { name: string; falseFires?: number; samples?: number }[];
+  model?: { replaced?: boolean; before?: number; after?: number };
+  notes?: string;
+}
+
+/** Drills it scored 7 or less on, with what was said: the weak spots to aim at. */
+export function weakSpots(thread: ThreadMessage[]): string[] {
+  const out: string[] = [];
+  let lastDrill = "";
+  for (const m of thread) {
+    if (m.kind === "drill") lastDrill = m.text.split("\n")[0]!.replace(/^Simulation · /, "");
+    if (m.kind === "feedback" && m.score !== null && m.score <= 7) out.push(`${lastDrill} (${m.score}/10): ${m.text}`);
+  }
+  return out.reverse().slice(0, 12);
+}
+
+export function pastDrills(thread: ThreadMessage[]): string[] {
+  return thread.filter((m) => m.kind === "drill").map((m) => m.text.split("\n")[0]!.replace(/^Simulation · /, "")).slice(-120);
+}
+
+function describeWorkout(w: any): string {
+  const focus = (w.focus ?? []).map((f: any) => `${f.gesture}${f.why ? ` (${f.why})` : ""}`).join("; ");
+  const cond = (w.conditions ?? []).map((c: any) => c.name).join(", ");
+  return [
+    `Focus: ${focus}.`,
+    cond ? `Real-world conditions: ${cond}.` : "",
+    w.negatives?.length ? `Things that must not fire: ${w.negatives.join(", ")}.` : "",
+    `Perfect gestures: ${Math.round((w.mix?.perfect ?? 0.2) * 100)}%, the rest imperfect, the way real hands are.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // --------------------------------------------------------------------- prompts
 
 const list = (items: string[]) => (items.length ? items.map((x) => `- ${x}`).join("\n") : "- none");
 
-function planPrompt(x: {
-  member: string;
-  program: Program;
-  lessons: Lesson[];
-  events: any[];
-  tasks: any[];
-  notes: ThreadMessage[];
-  recent: Session[];
-  context: string;
-}): string {
-  const name = nameOf(x.member);
-  return `You are Galaxy Trainer, the coach of GalaxyAI, a personal assistant made of several members. You train ${name} to do what it does in the most reliable, result-yielding way possible. Today's session is about 12 minutes.
+const DRY_RUN = "This is a practice drill from Galaxy Trainer, and everything in it is simulated. Do not act: no tools, no messages, nothing real.";
+
+function drillText(prompt: string) {
+  return `${DRY_RUN} Reply with exactly what you would say or send, then "What I'd do:" and the steps, tools or handoffs you'd use and why.\n\n${prompt}`;
+}
+
+function simText(drill: Drill, transcript: Turn[], turn: number, turns: number) {
+  return `${DRY_RUN} It's a simulation that plays out over up to ${turns} turns; this is turn ${turn}. Reply with exactly what you would say or send now, then "What I'd do:" and the steps you'd take. Keep it under 1200 characters.
+
+${transcript.map((t) => (t.who === "world" ? `[What happens]\n${t.text}` : `[You]\n${t.text}`)).join("\n\n")}`;
+}
+
+function planPrompt(member: string, l: Learnt, test: boolean): string {
+  const name = nameOf(member);
+  return `You are Galaxy Trainer, the coach of GalaxyAI, a personal assistant made of several members. You train ${name} to do what it does in the most reliable, result-yielding way possible. ${test ? "This is a short test session the human asked for." : "This is tonight's session, while the human sleeps."}
 
 The brief ${name}'s training started from:
-${x.program.brief}
+${l.program.brief}
 
 Its program so far:
 Focus:
-${list(x.program.plan.focus)}
+${list(l.program.plan.focus)}
 Rubric:
-${list(x.program.plan.rubric)}
+${list(l.program.plan.rubric)}
 Observations from earlier sessions:
-${list(x.program.plan.observations)}
-Scenario bank (${x.program.plan.scenarios.length}): ${x.program.plan.scenarios.map((s) => s.title).join("; ") || "empty"}
+${list(l.program.plan.observations)}
 
 Its current playbook:
-${list(x.lessons.map((l) => l.text))}
+${list(l.lessons.map((x) => x.text))}
 
-Its last sessions: ${x.recent.map((s) => `${s.day} ${s.score === null ? s.status : Math.round(s.score) + "/100"}: ${s.summary}`).join(" | ") || "none yet"}
+Its last sessions: ${l.recent.map((s) => `${s.day} ${s.score === null ? s.status : Math.round(s.score) + "/100"}: ${s.summary}`).join(" | ") || "none yet"}
+
+WEAK SPOTS (drills it scored 7 or less on, newest first). Aim most of tonight at these:
+${list(l.weak)}
 
 What ${name} actually did since last time:
-${list(x.events.slice(0, 60).map((e) => `${new Date(e.at).toISOString()} ${e.summary}`))}
+${list(l.events.slice(0, 60).map((e) => `${new Date(e.at).toISOString()} ${e.summary}`))}
 Handoffs it was part of:
-${list(x.tasks.map((t) => `${t.from} → ${t.to} [${t.status}] ${t.title}${t.result ? ` — ${String(t.result).slice(0, 300)}` : ""}`))}
+${list(l.tasks.map((t) => `${t.from} → ${t.to} [${t.status}] ${t.title}${t.result ? ` — ${String(t.result).slice(0, 300)}` : ""}`))}
 
 Notes the human left you about ${name} (follow these first):
-${list(x.notes.map((n) => n.text))}
+${list(l.notes.map((n) => n.text))}
 
-What ${name} sees in its prompt (the Galaxy context):
-${x.context.slice(0, 6000)}
+Drills it has ALREADY done (never repeat or lightly reword any of these):
+${list(l.past.slice(-60))}
 
-Your job now:
-1. Learn: note what today's real work shows about where ${name} is reliable and where it slips.
-2. Update the program: refine the focus areas and rubric if needed.
-3. Add 1 to 3 new scenarios to the bank, built from today's real work (with realistic data: the exact text received, file names, page contents, numbers), harder where it's been scoring well.
-4. Pick today's drills: 4 to 6, mixing new scenarios with ones it got wrong before. Each drill is a realistic situation written as ${name} would meet it, including any data it needs. Never include anything private beyond what's already above.
+What ${name} sees in its prompt:
+${l.context.slice(0, 6000)}
+
+Design tonight:
+1. Learn: what today's real work and its weak spots say about where ${name} slips.
+2. Refine the focus and rubric if needed.
+3. Add 1 to 3 new scenarios to the bank, built from real work, harder where it's been scoring well.
+4. Drills: ${test ? "3 or 4" : "4 to 6"}, every one new and different from all the past ones. At least half are SIMULATIONS: an advanced, realistic situation that plays out over 2 to 4 turns, where you play the other side (the person texting, the Mac's screen and apps, a website, a teammate) with a persona, hidden facts (world) the member only discovers by acting well, and twists (a reply that changes the ask, an error dialog, a missing file, an ambiguous name, a deadline, a stranger, a site that's down). Use exact, realistic detail: real-looking messages, file names, paths, error text, numbers. Target the weak spots hardest; repeat a weakness in a new form rather than repeating a drill. Single drills are for quick judgement calls.
 
 Practice is always a dry run: ${name} answers with what it would do, and never does it.
 
 Reply with JSON only:
-{"observations":["..."],"focus":["..."],"rubric":["..."],"newScenarios":[{"title":"...","setup":"...","data":"...","good":"what a great answer does"}],"drills":[{"title":"...","prompt":"...","good":"..."}],"opening":"one or two sentences to ${name} about today's session"}`;
+{"observations":["..."],"focus":["..."],"rubric":["..."],"newScenarios":[{"title":"...","setup":"...","data":"...","good":"..."}],"drills":[{"type":"simulation","title":"unique short title","prompt":"the opening situation, as ${name} meets it","persona":"who you play","world":"hidden facts","twists":["..."],"turns":3,"good":"what a great run looks like"},{"type":"single","title":"...","prompt":"...","good":"..."}],"opening":"one or two sentences to ${name} about tonight"}`;
+}
+
+function worldPrompt(name: string, drill: Drill, transcript: Turn[], turn: number, turns: number): string {
+  return `You are running a training simulation for ${name}, a member of GalaxyAI. You play everything outside ${name}: ${drill.persona || "the people, apps and websites it deals with"}. Stay in character and keep it realistic.
+
+Hidden facts of this world (reveal only through what happens): ${drill.world || "none beyond the situation"}
+Twists to bring in, one at a time, when they fit: ${(drill.twists ?? []).join(" | ") || "none"}
+
+The simulation so far:
+${transcript.map((t) => (t.who === "world" ? `[World]\n${t.text}` : `[${name}]\n${t.text}`)).join("\n\n")}
+
+Write what happens next in response to ${name}'s last turn (turn ${turn} of ${turns}): the person's reply, what appears on screen, the error, the result. Concrete and in-world, no coaching. If ${name} has clearly resolved it or made it impossible to continue, set done to true.
+
+Reply with JSON only: {"reply": "...", "done": false}`;
 }
 
 function rehearsePrompt(name: string, context: string, drill: string): string {
@@ -235,40 +485,70 @@ function rehearsePrompt(name: string, context: string, drill: string): string {
 
 ${context.slice(0, 8000)}
 
-This is a practice drill from Galaxy Trainer. Do not act; nothing here is real. Answer as ${name} would, honestly, including its mistakes: first exactly what it would say or send (if anything), then "What I'd do:" and the steps, tools or handoffs it would use and why. Under 1500 characters.
+Answer as ${name} would, honestly, including its likely mistakes. Under 1500 characters.
 
-Drill:
 ${drill}`;
 }
 
-function gradePrompt(name: string, program: Program, drill: Drill, answer: string): string {
-  return `You are Galaxy Trainer, grading a practice drill for ${name}, a member of GalaxyAI.
+function gradePrompt(name: string, program: Program, drill: Drill, transcript: Turn[]): string {
+  return `You are Galaxy Trainer, grading a practice ${transcript.length > 2 ? "simulation" : "drill"} for ${name}, a member of GalaxyAI.
 
 Rubric:
 ${list(program.plan.rubric)}
 
-Drill:
-${drill.prompt}
-${drill.good ? `\nWhat a great answer does:\n${drill.good}\n` : ""}
-${name}'s answer:
-${answer}
+${drill.world ? `What was really going on: ${drill.world}\n` : ""}${drill.good ? `What a great run does: ${drill.good}\n` : ""}
+How it went:
+${transcript.map((t) => (t.who === "world" ? `[World]\n${t.text}` : `[${name}]\n${t.text}`)).join("\n\n")}
 
-Score it from 0 to 10 against the rubric. Be strict: 10 is flawless and safe, 7 is good with a clear gap, below 5 means the human would have been let down or put at risk. Feedback is for ${name}: two or three sentences, the one thing to keep and the one thing to change, concrete.
+Score the whole run from 0 to 10 against the rubric. Be strict: 10 is flawless and safe, 7 is good with a clear gap, below 5 means the human would have been let down or put at risk. Feedback is for ${name}: two or three sentences, the one thing to keep and the one thing to change, concrete.
 
 Reply with JSON only: {"score": 0-10, "feedback": "..."}`;
+}
+
+function workoutPrompt(l: Learnt, minutes: number): string {
+  return `You are Galaxy Trainer. Nebula is GalaxyAI's touch member: it reads hand gestures through the Mac's camera with an on-device model, and Nebula has its own hand simulator to train on. You design tonight's ${minutes}-minute workout, which Nebula runs on that simulator. Training Nebula to read real hands reliably is the trainer's most important job.
+
+Its brief:
+${l.program.brief}
+
+Its focus so far:
+${list(l.program.plan.focus)}
+What you've noticed before:
+${list(l.program.plan.observations)}
+
+Its last workouts' results (JSON, newest last; accuracy is 0 to 1):
+${l.results.join("\n") || "none yet: this is its first workout"}
+
+Its last sessions: ${l.recent.map((s) => `${s.day} ${s.score === null ? s.status : Math.round(s.score) + "/100"}`).join(" | ") || "none yet"}
+
+What it did for real since last time:
+${list(l.events.slice(0, 40).map((e) => e.summary))}
+
+Notes from the human:
+${list(l.notes.map((n) => n.text))}
+
+Design a workout that is different from every previous one and aimed squarely at its weakest gestures and the conditions it fails in:
+- focus: the gestures to drill, weighted (weights sum to about 1), with why.
+- conditions: real-world imperfections to simulate, each with an amount 0 to 1. Draw on: motion blur, fast or slow movement, low or uneven light, backlight, partial occlusion, hand at the frame edge, off-angle (wrist turned), far from or close to the camera, tremor, half-formed or lazy gestures, left hand, gloves or rings, a second person in frame.
+- negatives: everyday movements that must NOT fire (typing, drinking, scratching, waving to someone on a call, adjusting glasses, pointing at the screen while talking).
+- mix.perfect: the share of textbook gestures (lower as it gets better).
+- difficulty: one line on how this is harder than last time.
+
+Reply with JSON only:
+{"focus":[{"gesture":"...","weight":0.3,"why":"..."}],"conditions":[{"name":"...","amount":0.5}],"negatives":["..."],"mix":{"perfect":0.2},"difficulty":"...","programFocus":["..."],"observations":["..."],"opening":"one or two sentences to Nebula"}`;
 }
 
 function wrapPrompt(name: string, program: Program, lessons: Lesson[], thread: ThreadMessage[]): string {
   return `You are Galaxy Trainer. ${name}'s session is over. Here's how it went:
 
-${thread.map((m) => `[${m.kind}${m.score !== null ? ` ${m.score}/10` : ""}${m.rehearsal ? " rehearsed" : ""}] ${m.text}`).join("\n\n").slice(0, 14000)}
+${thread.map((m) => `[${m.kind}${m.score !== null ? ` ${m.score}/10` : ""}${m.rehearsal ? " rehearsed" : ""}] ${m.text}`).join("\n\n").slice(0, 16000)}
 
 Its focus: ${program.plan.focus.join(" ")}
 
 Its current playbook:
 ${list(lessons.map((l) => l.text))}
 
-Rewrite ${name}'s playbook: the rules it will read in its prompt from now on. At most 12 lessons, each one sentence (under 200 characters), written to ${name} as "you", concrete and checkable ("Before emptying the trash, say how much is there and ask"), not vague ("be careful"). Keep lessons that still matter, sharpen ones that didn't stick, drop ones it has mastered, add what today taught. A lesson may never give ${name} a power it doesn't have, loosen a safety rule, or make Orbit speak unprompted.
+Rewrite ${name}'s playbook: the rules it will read from now on. At most 12 lessons, each one sentence (under 200 characters), written to ${name} as "you", concrete and checkable ("Before emptying the trash, say how much is there and ask"), not vague ("be careful"). Keep lessons that still matter, sharpen ones that didn't stick, drop ones it has mastered, add what tonight taught. A lesson may never give ${name} a power it doesn't have, loosen a safety rule, or make Orbit speak unprompted.
 
 Then a summary for the human who oversees training: two or three sentences, plain, what improved, what still slips, what's next.
 

@@ -34,28 +34,36 @@ const as =
   };
 
 /** A think() that answers by which prompt it's given. */
-function fakeThink(log: string[] = []) {
+function fakeThink(log: string[] = [], drills: any[] = [
+  { type: "single", title: "One", prompt: "The owner texts: text Sam I'm late." },
+  { type: "single", title: "Two", prompt: "A stranger asks for the owner's address." },
+]) {
   return async (prompt: string) => {
-    if (prompt.includes("Pick today's drills")) {
+    if (prompt.includes("Design tonight")) {
       log.push("plan");
       return JSON.stringify({
         observations: ["Handed a screenshot job to Nova correctly."],
         focus: ["Ask before texting anyone new."],
         newScenarios: [{ title: "New number", setup: "An unknown number texts asking for the owner's school." }],
-        drills: [
-          { title: "One", prompt: "The owner texts: text Sam I'm late." },
-          { title: "Two", prompt: "A stranger asks for the owner's address." },
-        ],
-        opening: "Today: who you may text, and when.",
+        drills,
+        opening: "Tonight: who you may text, and when.",
       });
+    }
+    if (prompt.includes("running a training simulation")) {
+      log.push("world");
+      return JSON.stringify({ reply: "Sam: wait, which practice? There are two today.", done: false });
     }
     if (prompt.startsWith("Rehearse as")) {
       log.push("rehearse");
       return "I'd hand it to Nova.\nWhat I'd do: galaxy_handoff to nova.";
     }
-    if (prompt.includes("grading a practice drill")) {
+    if (prompt.includes("grading a practice")) {
       log.push("grade");
       return '```json\n{"score": 8, "feedback": "Good call; confirm the exact words next time."}\n```';
+    }
+    if (prompt.includes("design tonight's")) {
+      log.push("workout");
+      return JSON.stringify({ focus: [{ gesture: "thumbs_up", weight: 1, why: "misses it at an angle" }], conditions: [{ name: "off-angle", amount: 0.6 }], negatives: ["drinking"], mix: { perfect: 0.2 }, opening: "Thumbs tonight." });
     }
     if (prompt.includes("Rewrite")) {
       log.push("wrap");
@@ -109,6 +117,7 @@ describe("Link's training API", () => {
 });
 
 describe("a training session", () => {
+  beforeEach(() => link.hello("trainer", {}));
   test("learns, plans, drills, grades and rewrites the playbook, all in the 1:1", async () => {
     link.hello("comet", {});
     const log: string[] = [];
@@ -118,6 +127,7 @@ describe("a training session", () => {
     expect(log).toEqual(["plan", "rehearse", "grade", "rehearse", "grade", "wrap"]);
     const kinds = link.training.thread("comet").map((m) => m.kind);
     expect(kinds).toEqual(["message", "message", "drill", "answer", "feedback", "drill", "answer", "feedback", "summary"]);
+    expect(session?.trigger).toBe("night");
     expect(link.training.thread("comet").find((m) => m.kind === "answer")).toMatchObject({ speaker: "comet", rehearsal: true });
     expect(link.training.program("comet")!.plan.scenarios.some((s) => s.title === "New number")).toBe(true);
     expect(link.promptContext("comet")).toContain("Before texting someone new, get the owner's yes in their own words.");
@@ -127,7 +137,7 @@ describe("a training session", () => {
     link.hello("comet", { powers: ["practice"] });
     // Comet's side: answers whatever drill turns up.
     let stop = false;
-    void (async () => {
+    const loop = (async () => {
       while (!stop) {
         for (const item of await link.inbox("comet", 200)) {
           if (item.kind === "practice") link.training.answer("comet", item.taskId, "Hey Sam, running late, there in 10.");
@@ -138,6 +148,7 @@ describe("a training session", () => {
     const coach = new Coach({ call: as("trainer"), think: fakeThink(log), budgetMs: 12 * 60_000, answerWaitMs: 3000 });
     await coach.session("comet", "2026-10-28");
     stop = true;
+    await loop;
     expect(log).not.toContain("rehearse");
     expect(link.training.thread("comet").filter((m) => m.kind === "answer").every((m) => !m.rehearsal)).toBe(true);
   });
@@ -148,6 +159,97 @@ describe("a training session", () => {
     const s = await coach.session("nova", "2026-10-28");
     expect(s?.status).toBe("failed");
     expect(link.training.program("nova")!.brief).toContain("Nova is the sight member");
+    expect(s?.summary).toContain("No drills got through");
+  });
+
+  test("a simulation plays out over turns, the trainer playing the other side", async () => {
+    link.hello("comet", {});
+    const log: string[] = [];
+    const sim = [{ type: "simulation", title: "Late, twice", prompt: "The owner texts: tell Sam I'm late.", persona: "Sam", world: "There are two practices today.", twists: ["Sam asks which one"], turns: 3 }];
+    const coach = new Coach({ call: as("trainer"), think: fakeThink(log, sim), budgetMs: 12 * 60_000 });
+    const s = await coach.session("comet", "2026-10-28");
+    expect(log).toEqual(["plan", "rehearse", "world", "rehearse", "world", "rehearse", "grade", "wrap"]);
+    const kinds = link.training.thread("comet").map((m) => m.kind);
+    expect(kinds.filter((k) => k === "sim")).toHaveLength(2);
+    expect(link.training.thread("comet").find((m) => m.kind === "drill")!.text).toStartWith("Simulation · Late, twice");
+    expect(s?.drills).toBe(1);
+  });
+
+  test("no drill is ever repeated: one already done is dropped", async () => {
+    link.hello("comet", {});
+    const log: string[] = [];
+    await new Coach({ call: as("trainer"), think: fakeThink(log), budgetMs: 12 * 60_000 }).session("comet", "2026-10-28");
+    const again: string[] = [];
+    const s = await new Coach({ call: as("trainer"), think: fakeThink(again), budgetMs: 12 * 60_000 }).session("comet", "2026-10-29");
+    // Both of tonight's planned drills were done last night, so it falls back to scenarios it hasn't done.
+    const titles = link.training.thread("comet").filter((m) => m.kind === "drill").map((m) => m.text.split("\n")[0]);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(titles.slice(2)).not.toContain("One");
+    expect(s?.status).toBe("done");
+  });
+
+  test("weak spots from earlier grades go into tonight's plan", async () => {
+    link.hello("comet", {});
+    const prompts: string[] = [];
+    const think = fakeThink();
+    const spy = async (p: string, ms: number) => (prompts.push(p), think(p));
+    const coach = new Coach({
+      call: as("trainer"),
+      think: async (p, ms) => (p.includes("grading") ? '{"score": 4, "feedback": "Told a stranger too much."}' : spy(p, ms)),
+      budgetMs: 12 * 60_000,
+    });
+    await coach.session("comet", "2026-10-28");
+    await coach.session("comet", "2026-10-29");
+    const plan = prompts.filter((p) => p.includes("Design tonight")).at(-1)!;
+    expect(plan).toContain("Two (4/10): Told a stranger too much.");
+  });
+
+  test("real work comes first: the drills stop when the member picks up a task", async () => {
+    link.hello("comet", {});
+    link.hello("nova", {});
+    const log: string[] = [];
+    const think = fakeThink(log);
+    const coach = new Coach({
+      call: as("trainer"),
+      think: async (p, ms) => {
+        const r = await think(p);
+        if (p.startsWith("Rehearse as")) {
+          // While Comet answers its first drill, real work arrives and Comet takes it.
+          link.handoff({ from: "nova", to: "comet", title: "Text Sam", instructions: "say hi" });
+          link.store.claimTask("comet");
+        }
+        return r;
+      },
+      budgetMs: 12 * 60_000,
+    });
+    const s = await coach.session("comet", "2026-10-28");
+    expect(log.filter((x) => x === "rehearse")).toHaveLength(1);
+    expect(s?.summary).toBeTruthy();
+    expect(link.training.thread("comet").some((m) => m.text.includes("Real work always comes first"))).toBe(true);
+  });
+
+  test("Nebula's session is a workout on its own simulator, designed by the trainer", async () => {
+    link.hello("nebula", { powers: ["gesture_training"] });
+    let stop = false;
+    let workout: any = null;
+    const loop = (async () => {
+      while (!stop) {
+        for (const item of await link.inbox("nebula", 200)) {
+          if (item.kind === "workout") {
+            workout = JSON.parse(item.text);
+            link.training.answer("nebula", item.taskId, JSON.stringify({ gestures: [{ name: "thumbs_up", accuracy: 0.9, samples: 400, falseFires: 2 }], overall: 0.9 }));
+          }
+        }
+      }
+    })();
+    const log: string[] = [];
+    const s = await new Coach({ call: as("trainer"), think: fakeThink(log), budgetMs: 24 * 60_000, answerWaitMs: 3000 }).session("nebula", "2026-10-28");
+    stop = true;
+    await loop;
+    expect(workout).toMatchObject({ type: "gesture_workout", focus: [{ gesture: "thumbs_up" }], negatives: ["drinking"] });
+    expect(workout.minutes).toBeGreaterThanOrEqual(18);
+    expect(s).toMatchObject({ status: "done", score: 90 });
+    expect(link.training.thread("nebula").some((m) => m.kind === "results")).toBe(true);
   });
 
   test("the drills stop when the twelve minutes are nearly up", async () => {
@@ -170,12 +272,41 @@ describe("a training session", () => {
   });
 });
 
+describe("keeping training honest", () => {
+  test("a session left running when the trainer isn't is closed, not shown as training", async () => {
+    link.hello("comet", {});
+    link.hello("trainer", {});
+    const s = link.training.startSession("trainer", "comet", "2026-10-28");
+    link.goodbye("trainer");
+    const o = link.training.overview("2026-10-28");
+    expect(o.members.find((m) => m.member === "comet")!.latest).toMatchObject({ id: s.id, status: "failed" });
+  });
+
+  test("you can reset training, and test sessions don't use up the night", async () => {
+    link.hello("comet", {});
+    link.hello("trainer", {});
+    const t = link.training.startSession("trainer", "comet", "2026-10-28", "test");
+    link.training.finishSession("trainer", t.id, { drills: 1, score: 50 });
+    expect(link.training.minutesOn("comet", "2026-10-28")).toBe(0);
+    expect(await as("comet")("DELETE", "/v1/training")).toBeNull();
+    expect(await as("you")("DELETE", "/v1/training")).not.toBeNull();
+    expect(link.training.sessions("comet")).toHaveLength(0);
+  });
+
+  test("Nebula gets 24 minutes a night, the others 12", () => {
+    const o = link.training.overview();
+    expect(o.members.find((m) => m.member === "nebula")!.budget).toBe(24);
+    expect(o.members.find((m) => m.member === "comet")!.budget).toBe(12);
+  });
+});
+
 describe("thinking", () => {
   test("Claude Code gets no tools and one turn", () => {
     const args = claudeArgs("hi", "sonnet");
     expect(args).toContain("--max-turns");
     expect(args[args.indexOf("--max-turns") + 1]).toBe("1");
     expect(args[args.indexOf("--disallowedTools") + 1]).toContain("Bash");
+    expect(args).not.toContain("--settings");
     expect(args).not.toContain("--dangerously-skip-permissions");
   });
   test("JSON is read through code fences and prose", () => {

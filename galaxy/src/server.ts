@@ -202,6 +202,7 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
   // --------------------------------------------------------------- training
   const training = link.training;
   if (path === "/v1/training" && method === "GET") return json(training.overview());
+  if (path === "/v1/training" && method === "DELETE") return json(training.reset(needBody()));
   if (path === "/v1/training/threads" && method === "GET") {
     return json(await training.threads(Math.max(Number(url.searchParams.get("after") ?? 0) || 0, 0), wait()));
   }
@@ -214,7 +215,10 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     const [, member, part] = tm as unknown as [string, string, string | undefined];
     if (!part && method === "GET") return json(training.member(member));
     if (part === "program" && method === "PUT") return json(training.setProgram(needBody(), member, await input()));
-    if (part === "sessions" && method === "POST") return json(training.startSession(needBody(), member, String((await input()).day ?? "")), 201);
+    if (part === "sessions" && method === "POST") {
+      const { day, trigger } = await input();
+      return json(training.startSession(needBody(), member, String(day ?? ""), trigger === "test" ? "test" : "night"), 201);
+    }
     if (part === "playbook" && method === "PUT") {
       const { lessons, sessionId } = await input();
       return json(training.setPlaybook(needBody(), member, lessons, typeof sessionId === "string" ? sessionId : ""));
@@ -222,7 +226,8 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     if (part === "thread" && method === "POST") return json(training.post(needBody(), member, await input()), 201);
     // You ask for a session now: the trainer hears it through its inbox.
     if (part === "train" && method === "POST") {
-      if (needBody() !== "you") throw new LinkError(403, "only you can ask for a session");
+      // You, from the app or from Terminal (`galaxy train`).
+      if (!["you", "galaxy"].includes(needBody())) throw new LinkError(403, "only you can ask for a session");
       training.member(member);
       link.postInbox({ body: "trainer", kind: "message", taskId: "", replyTo: "", text: `train:${member}` });
       return json({ ok: true, trainerOnline: link.isOnline("trainer") }, 202);

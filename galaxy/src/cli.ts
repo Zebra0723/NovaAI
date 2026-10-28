@@ -17,6 +17,8 @@ const HELP = `galaxy - Galaxy Link from Terminal
   galaxy tasks               recent handoffs between bodies
   galaxy context <body>      the prompt block a body sees
   galaxy import              merge Nova's and Orbit's own memories in (safe to rerun)
+  galaxy train <member>      a 12-minute test session with Galaxy Trainer, now
+  galaxy trainer reset       wipe all training and start every member from its brief
   galaxy introduce           a round of introductions in Galaxy Chat, so every member knows the others
   galaxy doctor              why a member hasn't joined, and what to do about it`;
 
@@ -105,6 +107,19 @@ switch (command) {
       const r = await need(link.call<{ found: number; added: number }>("POST", "/v1/memory/import", { items }));
       console.log(`  ${name}: ${r.added} new of ${r.found}`);
     }
+    break;
+  }
+  case "train": {
+    const member = args[0];
+    if (!member) throw new Error("galaxy train <comet|orbit|nova|nebula|zenith>");
+    const r = await need(link.call<{ trainerOnline: boolean }>("POST", `/v1/training/${member}/train`, {}));
+    console.log(r.trainerOnline ? `Starting a 12-minute test session for ${member}. Watch it in Galaxy Trainer.` : "Queued, but the trainer isn't running: launchctl kickstart gui/$(id -u)/ai.galaxy.trainer");
+    break;
+  }
+  case "trainer": {
+    if (args[0] !== "reset") throw new Error("galaxy trainer reset");
+    await need(link.call("DELETE", "/v1/training"));
+    console.log("Training reset. Every member starts again from its brief at its next session.");
     break;
   }
   case "introduce": {
