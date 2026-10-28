@@ -34,8 +34,11 @@ exec "$BUN" "$ROOT/src/cli.ts" "\$@"
 SH
 chmod +x "$HOME/.local/bin/galaxy"
 
+# bootout returns before the job is gone, and bootstrapping into that gap fails with
+# "Bootstrap failed: 5: Input/output error". Wait for it to go, and retry once.
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-launchctl bootstrap "$DOMAIN" "$PLIST"
+for _ in $(seq 20); do launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break; sleep 0.5; done
+launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null || { sleep 2; launchctl bootstrap "$DOMAIN" "$PLIST"; }
 launchctl kickstart -k "$DOMAIN/$LABEL"
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do

@@ -74,9 +74,14 @@ LIVE_COMET="$(/usr/libexec/PlistBuddy -c 'Print :WorkingDirectory' "$HOME/Librar
 if COMET="$(checkout CometAI claude/nice-knuth-5l429p "$LIVE_COMET")"; then
   ok "Comet is in $COMET"
   step "Comet's packages" bash -c "cd '$COMET' && bun install --silent"
-  for label in com.imessage.server com.imessage.relay; do
-    launchctl kickstart -k "gui/$(id -u)/$label" >/dev/null 2>&1 && ok "restarted $label" || warn "$label isn't set up yet: run $COMET/scripts/install-launchd.sh"
-  done
+  if [ -f "$HOME/Library/LaunchAgents/com.imessage.server.plist" ]; then
+    for label in com.imessage.server com.imessage.relay; do
+      launchctl kickstart -k "gui/$(id -u)/$label" >/dev/null 2>&1 && ok "restarted $label" || warn "couldn't restart $label"
+    done
+  else
+    # Comet isn't a login agent yet, so nothing runs it: set that up now.
+    step "Comet's login agents" bash -c "cd '$COMET' && ./scripts/install-launchd.sh"
+  fi
 else
   warn "couldn't get CometAI"; FAILED+=("Comet")
 fi

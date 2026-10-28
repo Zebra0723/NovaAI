@@ -30,8 +30,10 @@ echo "Built $APP"
 
 if [[ "${1:-}" == "--install" ]]; then
     pkill -x GalaxyLink 2>/dev/null || true
+    for _ in $(seq 20); do pgrep -x GalaxyLink >/dev/null || break; sleep 0.25; done
     rm -rf "/Applications/Galaxy Link.app"
     cp -R "$APP" /Applications/
-    open "/Applications/Galaxy Link.app"
-    echo "Installed and opened /Applications/Galaxy Link.app"
+    # Opening the moment it's copied can fail (-609) while Launch Services catches up.
+    for _ in 1 2 3; do open "/Applications/Galaxy Link.app" 2>/dev/null && break; sleep 1; done
+    echo "Installed /Applications/Galaxy Link.app"
 fi
