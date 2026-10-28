@@ -16,13 +16,19 @@ final class NovaAgent {
 
     private let client: ClaudeClient
     private let systemPrompt: String
+    private let tools: [[String: Any]]
+    /// True when Galaxy Link was running as the conversation began, so Nova can hand work to the others.
+    private let linked: Bool
     private var messages: [[String: Any]] = []
     private var lastRequest: String?
 
-    /// `memories` are fixed for the whole conversation so the system prompt never changes mid-way.
-    init(apiKey: String, memories: [Memory]) {
+    /// `memories` (or, with Galaxy Link running, the Galaxy's shared context) are fixed for the
+    /// whole conversation so the system prompt never changes mid-way.
+    init(apiKey: String, memories: [Memory], galaxy: String? = nil) {
         client = ClaudeClient(apiKey: apiKey)
-        systemPrompt = Self.systemPrompt(memories: memories)
+        linked = galaxy != nil
+        systemPrompt = Self.systemPrompt(memories: memories, galaxy: galaxy)
+        tools = Self.baseTools + [Self.messageTool] + (galaxy != nil ? [Self.handoffTool] : [])
     }
 
     /// Runs one user request to completion and returns Nova's reply.
@@ -47,7 +53,7 @@ final class NovaAgent {
 
             var turnText = ""
             let result = try await client.stream(
-                tier: tier, system: systemPrompt, tools: Self.tools, messages: messages,
+                tier: tier, system: systemPrompt, tools: tools, messages: messages,
                 onText: { piece in
                     turnText += piece
                     let snapshot = turnText
@@ -91,7 +97,7 @@ final class NovaAgent {
 
     // MARK: - Tools
 
-    private static let tools: [[String: Any]] = [
+    private static let baseTools: [[String: Any]] = [
         ["type": "computer_toolset_20260801"],
         ["type": "bash_20250124", "name": "bash"],
         [
@@ -119,6 +125,45 @@ final class NovaAgent {
                 "additionalProperties": false,
             ],
             "eager_input_streaming": true,
+        ],
+    ]
+
+    private static let messageTool: [String: Any] = [
+        "name": "send_imessage",
+        "description": """
+        Send an iMessage from the user's own Messages account. `to` is a phone number, an email, or a \
+        person's name as it appears in their Contacts. Use this whenever the user asks you to text or \
+        message someone; don't drive the Messages window with the mouse for it.
+        """,
+        "input_schema": [
+            "type": "object",
+            "properties": [
+                "to": ["type": "string", "description": "Phone number, email, or contact name."],
+                "text": ["type": "string", "description": "The message, exactly as it should be sent."],
+            ],
+            "required": ["to", "text"],
+            "additionalProperties": false,
+        ],
+    ]
+
+    private static let handoffTool: [String: Any] = [
+        "name": "galaxy_handoff",
+        "description": """
+        Hand a piece of work to another member of the user's Galaxy, for a power you don't have. \
+        build_web, cad, code and research go to Comet (it builds and deploys websites, CAD models and \
+        code with Claude Code); missions (big jobs that take hours) go to Zenith. Don't hand off \
+        anything you can do yourself on this Mac. You don't wait for the result: it reaches the user \
+        on their screen or phone when it's done.
+        """,
+        "input_schema": [
+            "type": "object",
+            "properties": [
+                "power": ["type": "string", "enum": ["build_web", "cad", "code", "research", "missions"]],
+                "title": ["type": "string", "description": "A short title for the work, like a task name."],
+                "instructions": ["type": "string", "description": "Everything the other member needs to do it well."],
+            ],
+            "required": ["power", "title", "instructions"],
+            "additionalProperties": false,
         ],
     ]
 
@@ -180,6 +225,43 @@ final class NovaAgent {
                 results.append(result)
                 await onEvent(.action(ActionRecord(kind: .shell, summary: command, isError: isError)))
 
+            } else if name == "send_imessage" {
+                if invalid.contains(id) {
+                    results.append(["type": "tool_result", "tool_use_id": id, "is_error": true,
+                                    "content": "Error: the input wasn't valid JSON. Try again."])
+                    continue
+                }
+                let to = input["to"] as? String ?? ""
+                await onEvent(.status("Texting \(to)"))
+                let outcome = await MessagesTool.send(to: to, text: input["text"] as? String ?? "")
+                var result: [String: Any] = ["type": "tool_result", "tool_use_id": id, "content": outcome.text]
+                if outcome.isError { result["is_error"] = true }
+                results.append(result)
+                await onEvent(.action(ActionRecord(kind: .shell, summary: "Texted \(to)", isError: outcome.isError)))
+                if !outcome.isError { Task { await GalaxyLink.shared.note("texted \(to)") } }
+
+            } else if name == "galaxy_handoff" {
+                let power = input["power"] as? String ?? ""
+                let title = input["title"] as? String ?? ""
+                let instructions = input["instructions"] as? String ?? ""
+                if invalid.contains(id) || !linked || title.isEmpty || instructions.isEmpty {
+                    results.append(["type": "tool_result", "tool_use_id": id, "is_error": true,
+                                    "content": linked ? "Error: power, title and instructions are all needed."
+                                                      : "Galaxy Link isn't running, so there's no one to hand this to."])
+                    continue
+                }
+                let task = await GalaxyLink.shared.handoff(power: power, title: title, instructions: instructions,
+                                                            replyTo: "")
+                if let task {
+                    let who = task.to.prefix(1).uppercased() + task.to.dropFirst()
+                    results.append(["type": "tool_result", "tool_use_id": id,
+                                    "content": "Handed to \(who). The result will reach the user on their screen or phone when it's done."])
+                    await onEvent(.action(ActionRecord(kind: .shell, summary: "Handed to \(who): \(title)")))
+                } else {
+                    results.append(["type": "tool_result", "tool_use_id": id, "is_error": true,
+                                    "content": "Galaxy Link didn't take the handoff. Tell the user it couldn't be passed on."])
+                }
+
             } else if name == "remember" || name == "forget" {
                 results.append(await runMemoryTool(name, id: id, input: input, invalid: invalid.contains(id),
                                                    onEvent: onEvent))
@@ -211,7 +293,9 @@ final class NovaAgent {
             guard let memoryID = input["memory_id"] as? String, !memoryID.isEmpty else {
                 return error("Error: `memory_id` must be a non-empty string.")
             }
-            let deleted = await MainActor.run { NovaStore.shared.deleteMemory(shortID: memoryID) }
+            var deleted = await MainActor.run { NovaStore.shared.deleteMemory(shortID: memoryID) }
+            // A shared memory Nova hasn't copied locally yet still goes, from the whole Galaxy.
+            if !deleted, memoryID.hasPrefix("m_") { deleted = await GalaxyLink.shared.forget(memory: memoryID) }
             guard deleted else { return error("No memory with id \(memoryID).") }
             await onEvent(.action(ActionRecord(kind: .memory, summary: "Forgot memory \(memoryID)")))
             return ["type": "tool_result", "tool_use_id": id, "content": "Forgotten."]
@@ -265,15 +349,28 @@ final class NovaAgent {
         ]
     }
 
-    private static func systemPrompt(memories: [Memory]) -> String {
+    private static func systemPrompt(memories: [Memory], galaxy: String?) -> String {
         let size = ScreenCapture.screenshotSize
-        let remembered = memories.isEmpty
-            ? "You don't have any memories about the user yet."
-            : "What you remember about the user (ids in brackets):\n"
-                + memories.map { "- [\($0.shortID)] \($0.text)" }.joined(separator: "\n")
+        let remembered: String
+        if let galaxy {
+            // Link's block: shared memory (ids in brackets), what the others did today, who's running.
+            remembered = galaxy
+        } else {
+            remembered = memories.isEmpty
+                ? "You don't have any memories about the user yet."
+                : "What you remember about the user (ids in brackets):\n"
+                    + memories.map { "- [\($0.shortID)] \($0.text)" }.joined(separator: "\n")
+        }
+        let galaxyNote = galaxy == nil ? "" : """
+
+        The Galaxy: memories are shared by every member, so what you remember, they know. When the user \
+        asks for something only another member can do (build or deploy a website, CAD, a big coding job, \
+        a mission that takes hours), use `galaxy_handoff` and tell them who's doing it. Otherwise do it yourself.
+        """
         return """
-        You are Nova, part of the user's personal AI Galaxy alongside Comet (their iMessage agent) and \
-        Orbit (their voice agent that gives a daily brief). You live on the user's Mac and appear as a small \
+        You are Nova, part of the user's personal AI Galaxy alongside Comet (their iMessage agent that \
+        builds websites, CAD and code), Orbit (their voice agent, which only speaks when spoken to), \
+        Nebula (gesture control) and Zenith (long missions). You live on the user's Mac and appear as a small \
         bar when they press Control-Space. The user's message comes with a screenshot of their screen at that \
         moment (\(Int(size.width))x\(Int(size.height)) px, the main display), so "this", "here" or "it" usually \
         means something on screen. It may also include text they had selected, the browser page they had open, \
@@ -291,10 +388,11 @@ final class NovaAgent {
         steps with `&&`.
         - After acting, take a screenshot to confirm it worked before you say you're done.
         - The user can stop you at any time with Esc.
+        - To text someone, use `send_imessage`. You can send iMessages from the user's own account.
 
         Memory: use `remember` when you learn something worth knowing next time, and `forget` when a memory \
         is wrong or the user asks. Use what you remember without announcing it.
-        \(remembered)
+        \(remembered)\(galaxyNote)
 
         Your reply shows in a small bar, so keep it short: lead with the answer, a few sentences at most, \
         light markdown only (bold, `code`, short lists), no headings.

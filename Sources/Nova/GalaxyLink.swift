@@ -139,7 +139,8 @@ actor GalaxyLink {
 
     /// Memory, what the other bodies have been doing, and who's running, ready for the system prompt.
     func promptContext() async -> String? {
-        guard let data = await call("GET", "/v1/context"),
+        // Short: a new conversation waits on this, and Nova's own memory is a fine fallback.
+        guard let data = await call("GET", "/v1/context", timeout: 1.5),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return object["text"] as? String
     }

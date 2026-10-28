@@ -39,6 +39,10 @@ final class NovaController: ObservableObject {
     private var task: Task<Void, Never>?
     private var contextTask: Task<Void, Never>?
     private var monitors: [Any] = []
+    /// Called once when the running request finishes, for work another member handed over.
+    private var whenDone: ((String, Exchange.Outcome) -> Void)?
+    /// Results Link routed to the screen while Nova was busy; shown when it's free.
+    private var deliveries: [String] = []
 
     init() {
         installEscapeMonitors()
@@ -148,8 +152,8 @@ final class NovaController: ObservableObject {
         }
         guard let key = Keychain.apiKey else { needsKey = true; return }
 
-        let agent = self.agent ?? NovaAgent(apiKey: key, memories: store.memories)
-        self.agent = agent
+        let existing = self.agent
+        let memories = store.memories
         if conversation == nil { conversation = Conversation() }
 
         // Context is attached to the first request after a summon only.
@@ -169,6 +173,16 @@ final class NovaController: ObservableObject {
         let started = Date()
         task = Task { [weak self] in
             do {
+                let agent: NovaAgent
+                if let existing {
+                    agent = existing
+                } else {
+                    // A new conversation starts from the Galaxy's shared memory and today's
+                    // activity when Link is running, and from Nova's own memory when it isn't.
+                    let galaxy = await GalaxyLink.shared.promptContext()
+                    agent = NovaAgent(apiKey: key, memories: memories, galaxy: galaxy)
+                    self?.agent = agent
+                }
                 let reply = try await agent.run(text, context: attached) { event in
                     self?.handle(event)
                 }
@@ -221,6 +235,12 @@ final class NovaController: ObservableObject {
         tier = nil
         answer = reply
 
+        if outcome == .completed, let request = exchange?.request, !(exchange?.actions.isEmpty ?? true) {
+            // Only real work goes on the Galaxy's record, not every question.
+            let summary = request.count > 120 ? String(request.prefix(120)) + "…" : request
+            Task { await GalaxyLink.shared.note("did: \(summary)") }
+        }
+
         if var exchange, var conversation {
             exchange.reply = reply
             exchange.outcome = outcome
@@ -238,6 +258,49 @@ final class NovaController: ObservableObject {
         } else {
             panel?.orderOut(nil)
         }
+
+        if let whenDone {
+            self.whenDone = nil
+            whenDone(reply, outcome)
+        } else if !deliveries.isEmpty {
+            showDelivery(deliveries.removeFirst())
+        }
+    }
+
+    // MARK: - Galaxy Link
+
+    /// Does a piece of work another member handed to Nova, in the bar, as if the user had asked.
+    /// Waits for Nova to be free first; never interrupts what the user is doing with it.
+    func runHandoff(from member: String, title: String, instructions: String) async -> (ok: Bool, result: String) {
+        while isWorking { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+        guard Keychain.apiKey != nil else { return (false, "Nova has no API key set.") }
+        let who = member.prefix(1).uppercased() + member.dropFirst()
+        return await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                self.whenDone = { reply, outcome in
+                    continuation.resume(returning: (outcome == .completed, reply))
+                }
+                // A fresh conversation, so the handoff doesn't land in the middle of one of the user's.
+                if self.isShown { self.hide() }
+                self.run("[\(who) asked: \(title)]\n\n\(instructions)")
+            }
+        }
+    }
+
+    /// A result or message Link routed to the screen because the user is at the Mac.
+    func showDelivery(_ text: String) {
+        guard !isWorking else {
+            deliveries.append(text)
+            return
+        }
+        if isShown { hide() }
+        show()
+        context = []
+        contextTask?.cancel()
+        answeredBy = nil
+        answerIsError = false
+        answer = text
+        panel?.present(acting: false, interactive: true)
     }
 
     // MARK: - Esc kill switch

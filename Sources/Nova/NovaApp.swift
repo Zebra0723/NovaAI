@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = NovaController()
     private lazy var appWindow = AppWindowController(controller: controller)
     private lazy var watcher = ProactiveWatcher(controller: controller)
+    private lazy var galaxy = NovaLink(controller: controller)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         panel = NovaPanel(controller: controller)
@@ -34,6 +35,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Permissions.requestIfNeeded()
         watcher.start()
+        galaxy.start()
+    }
+
+    /// Tells the Galaxy Nova is going, so its work isn't left waiting on a body that quit.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task {
+            await galaxy.stop()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// Clicking Nova in the Dock (while the app window is open) brings the window back.
