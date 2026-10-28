@@ -54,7 +54,7 @@ export interface Task {
 }
 
 /** A line in Galaxy Chat, the group chat the bodies share. Only bodies post; you watch. */
-export type ChatKind = "intro" | "message" | "handoff" | "claimed" | "result";
+export type ChatKind = "intro" | "message" | "handoff" | "claimed" | "result" | "approval";
 
 export interface ChatMessage {
   id: number;
@@ -63,6 +63,23 @@ export interface ChatMessage {
   text: string;
   taskId: string;
   at: number;
+}
+
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired" | "cancelled";
+
+/** A yes-or-no a body is waiting on. Any other body (Nebula's thumbs, Comet's text) can answer it. */
+export interface Approval {
+  id: string;
+  from: BodyID;
+  title: string;
+  detail: string;
+  status: ApprovalStatus;
+  /** Which body answered, and how ("gesture", "text", ...). */
+  decidedBy: BodyID;
+  via: string;
+  createdAt: number;
+  expiresAt: number;
+  decidedAt: number;
 }
 
 export interface InboxItem {
@@ -148,6 +165,19 @@ create table if not exists chat (
   at integer not null
 );
 create index if not exists chat_body on chat(body, kind);
+create table if not exists approvals (
+  id text primary key,
+  sender text not null,
+  title text not null,
+  detail text not null default '',
+  status text not null,
+  decided_by text not null default '',
+  via text not null default '',
+  created_at integer not null,
+  expires_at integer not null,
+  decided_at integer not null default 0
+);
+create index if not exists approvals_status on approvals(status, created_at);
 `;
 
 /** Two memories are the same memory if they differ only in case, spacing and end punctuation. */
@@ -384,6 +414,41 @@ export class Store {
     return rows.map(rowToInbox).sort((a, b) => a.id - b.id);
   }
 
+  // --------------------------------------------------------------- approvals
+
+  addApproval(a: Pick<Approval, "from" | "title" | "detail" | "expiresAt">): Approval {
+    const id = newID("a");
+    this.db
+      .query("insert into approvals (id, sender, title, detail, status, created_at, expires_at) values (?, ?, ?, ?, 'pending', ?, ?)")
+      .run(id, a.from, a.title, a.detail, this.now(), a.expiresAt);
+    return this.approval(id)!;
+  }
+
+  approval(id: string): Approval | null {
+    const row = this.db.query("select * from approvals where id = ?").get(id) as any;
+    return row ? rowToApproval(row) : null;
+  }
+
+  pendingApprovals(): Approval[] {
+    return (this.db.query("select * from approvals where status = 'pending' order by created_at").all() as any[]).map(rowToApproval);
+  }
+
+  /** Settles a pending approval; null if it was already settled. */
+  settleApproval(id: string, status: Exclude<ApprovalStatus, "pending">, by: BodyID, via: string): Approval | null {
+    const changed = this.db
+      .query("update approvals set status = ?, decided_by = ?, via = ?, decided_at = ? where id = ? and status = 'pending'")
+      .run(status, by, via, this.now(), id).changes;
+    return changed ? this.approval(id) : null;
+  }
+
+  /** Pending approvals past their deadline become expired. Returns them. */
+  expireApprovals(): Approval[] {
+    const rows = this.db
+      .query("update approvals set status = 'expired', decided_at = ? where status = 'pending' and expires_at <= ? returning *")
+      .all(this.now(), this.now()) as any[];
+    return rows.map(rowToApproval);
+  }
+
   pendingInbox(body: BodyID): number {
     return (this.db.query("select count(*) as n from inbox where body = ? and delivered_at = 0").get(body) as any).n;
   }
@@ -416,6 +481,21 @@ function rowToTask(r: any): Task {
 
 function rowToChat(r: any): ChatMessage {
   return { id: r.id, body: r.body, kind: r.kind, text: r.text, taskId: r.task_id, at: r.at };
+}
+
+function rowToApproval(r: any): Approval {
+  return {
+    id: r.id,
+    from: r.sender,
+    title: r.title,
+    detail: r.detail,
+    status: r.status,
+    decidedBy: r.decided_by,
+    via: r.via,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    decidedAt: r.decided_at,
+  };
 }
 
 function rowToInbox(r: any): InboxItem {

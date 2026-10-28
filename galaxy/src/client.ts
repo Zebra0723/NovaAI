@@ -31,6 +31,17 @@ export interface LinkInboxItem {
   replyTo: string;
 }
 
+export interface LinkApproval {
+  id: string;
+  from: string;
+  title: string;
+  detail: string;
+  status: "pending" | "approved" | "rejected" | "expired" | "cancelled";
+  decidedBy: string;
+  via: string;
+  expiresAt: number;
+}
+
 export interface LinkMemory {
   id: string;
   text: string;
@@ -150,6 +161,27 @@ export class GalaxyLink {
   }
   finish(id: string, ok: boolean, result: string) {
     return this.call<LinkTask>("POST", `/v1/tasks/${id}/done`, { ok, result });
+  }
+
+  /**
+   * Asks the user a yes-or-no and waits for the answer (a thumbs up or down to Nebula, or
+   * another body). Resolves to the settled approval, or null if Link isn't there.
+   */
+  async ask(title: string, opts: { detail?: string; ttlSeconds?: number } = {}): Promise<LinkApproval | null> {
+    const created = await this.call<LinkApproval>("POST", "/v1/approvals", { title, ...opts });
+    if (!created) return null;
+    const deadline = Date.now() + (opts.ttlSeconds ?? 120) * 1000 + 5000;
+    while (Date.now() < deadline) {
+      const now = await this.call<LinkApproval>("GET", `/v1/approvals/${created.id}?wait=25`, undefined, 30_000);
+      if (!now) return null;
+      if (now.status !== "pending") return now;
+    }
+    return null;
+  }
+
+  /** Answers another body's approval. */
+  decide(id: string, approve: boolean, via = "text") {
+    return this.call<LinkApproval>("POST", `/v1/approvals/${id}/decide`, { decision: approve ? "approve" : "reject", via });
   }
 
   /** A message for the user, delivered wherever they are. Only ever for something they asked for. */

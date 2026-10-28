@@ -7,7 +7,7 @@
 
 import { spawn } from "node:child_process";
 import { PresenceReader } from "./presence";
-import { Store, type Body, type BodyID, type ChatMessage, type InboxItem, type Task } from "./store";
+import { Store, type Approval, type Body, type BodyID, type ChatMessage, type InboxItem, type Task } from "./store";
 
 /** How a body reaches you. Link uses this to deliver results, never to start a conversation. */
 export type Surface = "phone" | "screen" | "voice" | "none";
@@ -67,8 +67,12 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
       "Hi everyone, I'm Zenith. Give me the big missions, the ones that take hours or days. I work on " +
       "my own computer in the cloud, overnight if I have to, and bring back the finished thing.",
   },
-  nebula: { name: "Nebula", powers: [], surface: "none", launch: "", intro: "" },
+  nebula: { name: "Nebula", powers: ["gestures", "approvals"], surface: "none", launch: "", intro: "" },
 };
+
+/** How long an approval waits for an answer unless the asker says otherwise. */
+export const APPROVAL_TTL_MS = 120_000;
+const APPROVAL_MAX_TTL_MS = 3_600_000;
 
 /** A body counts as running if it has been heard from this recently. */
 export const ONLINE_WITHIN_MS = 90_000;
@@ -95,6 +99,11 @@ export class Link {
   private chatWaiters = new Set<() => void>();
   private inboxWaiters = new Map<BodyID, Set<() => void>>();
   private launchedAt = new Map<BodyID, number>();
+  /** Bumped whenever the set of pending approvals changes, for long polls. */
+  private approvalVersion = 1;
+  private approvalListWaiters = new Set<() => void>();
+  private approvalWaiters = new Map<string, Set<() => void>>();
+  private expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   launcher: (command: string) => void = defaultLauncher;
 
   constructor(
@@ -347,6 +356,121 @@ export class Link {
       set.add(done);
     });
     return this.store.takeInbox(body);
+  }
+
+  // --------------------------------------------------------------- approvals
+
+  /**
+   * A body asks the user a yes-or-no. It reaches whoever can answer: Nebula arms its camera
+   * for a thumbs up or down, Galaxy Chat shows it. The asker hears the answer the moment it's
+   * given (`waitForDecision`), never by polling.
+   */
+  requestApproval(from: BodyID, input: { title?: unknown; detail?: unknown; ttlSeconds?: unknown }): Approval {
+    const title = typeof input.title === "string" ? input.title.trim() : "";
+    if (!title) throw new LinkError(400, "an approval needs a title: the question being asked");
+    const ttl = Number.isFinite(input.ttlSeconds) ? Math.min(Math.max(Number(input.ttlSeconds) * 1000, 5_000), APPROVAL_MAX_TTL_MS) : APPROVAL_TTL_MS;
+    const approval = this.store.addApproval({
+      from,
+      title: title.slice(0, 200),
+      detail: typeof input.detail === "string" ? input.detail.slice(0, 4000) : "",
+      expiresAt: this.store.now() + ttl,
+    });
+    this.store.addEvent(from, "approval", `asked for a yes or no: ${approval.title}`, approval.id);
+    this.say(from, "approval", `Waiting on a yes or no: ${approval.title}`);
+    const timer = setTimeout(() => this.expire(), ttl + 5);
+    (timer as any).unref?.();
+    this.expiryTimers.set(approval.id, timer);
+    this.approvalsChanged();
+    return approval;
+  }
+
+  approval(id: string): Approval {
+    this.expire();
+    const a = this.store.approval(id);
+    if (!a) throw new LinkError(404, "no such approval");
+    return a;
+  }
+
+  pendingApprovals(): { version: number; pending: Approval[] } {
+    this.expire();
+    return { version: this.approvalVersion, pending: this.store.pendingApprovals() };
+  }
+
+  /** The pending set as soon as it differs from `since` (a version), waiting up to `waitMs`. */
+  async pendingApprovalsSince(since: number, waitMs: number): Promise<{ version: number; pending: Approval[] }> {
+    const now = this.pendingApprovals();
+    if (now.version !== since || waitMs <= 0) return now;
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.approvalListWaiters.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, waitMs);
+      this.approvalListWaiters.add(done);
+    });
+    return this.pendingApprovals();
+  }
+
+  /** Approve or reject. Any body but the asker may answer; the first answer wins. */
+  decide(id: string, by: BodyID, decision: unknown, via: unknown): Approval {
+    if (decision !== "approve" && decision !== "reject") throw new LinkError(400, 'decision must be "approve" or "reject"');
+    const current = this.approval(id);
+    if (current.from === by) throw new LinkError(403, "a body can't answer its own question");
+    if (current.status !== "pending") throw new LinkError(409, `that approval is already ${current.status}`);
+    const how = typeof via === "string" && /^[a-z_ -]{1,32}$/.test(via) ? via : "";
+    const settled = this.store.settleApproval(id, decision === "approve" ? "approved" : "rejected", by, how);
+    if (!settled) throw new LinkError(409, "that approval was just answered");
+    const word = decision === "approve" ? "Approved" : "Rejected";
+    this.store.addEvent(by, "approval", `${word.toLowerCase()}: ${settled.title}`, settled.id);
+    this.say(by, "approval", `@${this.profile(settled.from).name} ${word}${how === "gesture" ? " with a gesture" : ""}: ${settled.title}`);
+    this.settled(settled);
+    return settled;
+  }
+
+  cancelApproval(id: string, by: BodyID): Approval {
+    const current = this.approval(id);
+    if (current.from !== by) throw new LinkError(403, "only the body that asked can cancel");
+    const settled = this.store.settleApproval(id, "cancelled", by, "");
+    if (!settled) throw new LinkError(409, `that approval is already ${current.status}`);
+    this.settled(settled);
+    return settled;
+  }
+
+  /** For the asker: returns as soon as the approval is answered, or after `waitMs`. */
+  async waitForDecision(id: string, waitMs: number): Promise<Approval> {
+    const now = this.approval(id);
+    if (now.status !== "pending" || waitMs <= 0) return now;
+    await new Promise<void>((resolve) => {
+      const set = this.approvalWaiters.get(id) ?? new Set();
+      this.approvalWaiters.set(id, set);
+      const done = () => {
+        clearTimeout(timer);
+        set.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, waitMs);
+      set.add(done);
+    });
+    return this.approval(id);
+  }
+
+  private expire() {
+    for (const a of this.store.expireApprovals()) this.settled(a);
+  }
+
+  private settled(a: Approval) {
+    const timer = this.expiryTimers.get(a.id);
+    if (timer) clearTimeout(timer);
+    this.expiryTimers.delete(a.id);
+    for (const wake of [...(this.approvalWaiters.get(a.id) ?? [])]) wake();
+    this.approvalWaiters.delete(a.id);
+    this.approvalsChanged();
+  }
+
+  private approvalsChanged() {
+    this.approvalVersion++;
+    for (const wake of [...this.approvalListWaiters]) wake();
   }
 
   // -------------------------------------------------------------------- chat

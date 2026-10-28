@@ -176,6 +176,23 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     return json(link.say(who, "message", String(text ?? "")), 201);
   }
 
+  // ------------------------------------------------------------- approvals
+  if (path === "/v1/approvals" && method === "POST") return json(link.requestApproval(needBody(), await input()), 201);
+  if (path === "/v1/approvals/pending" && method === "GET") {
+    const since = Number(url.searchParams.get("since") ?? 0) || 0;
+    return json(await link.pendingApprovalsSince(since, wait()));
+  }
+  const approvalMatch = path.match(/^\/v1\/approvals\/(a_[a-z0-9]+)(?:\/(decide|cancel))?$/);
+  if (approvalMatch) {
+    const [, id, action] = approvalMatch as unknown as [string, string, string | undefined];
+    if (!action && method === "GET") return json(await link.waitForDecision(id, wait()));
+    if (action === "decide" && method === "POST") {
+      const { decision, via } = await input();
+      return json(link.decide(id, needBody(), decision, via));
+    }
+    if (action === "cancel" && method === "POST") return json(link.cancelApproval(id, needBody()));
+  }
+
   // -------------------------------------------------------------- delivery
   if (path === "/v1/deliver" && method === "POST") return json(link.deliver(needBody(), (await input()).text), 201);
   if (path === "/v1/inbox" && method === "GET") return json(await link.inbox(needBody(), wait()));
