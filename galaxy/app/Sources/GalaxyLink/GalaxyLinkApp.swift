@@ -27,6 +27,16 @@ enum Link {
 
     static var address: URL { URL(string: "http://127.0.0.1:\(port)/")! }
 
+    /// The same window serves two apps: Galaxy Link, and Galaxy Trainer, which opens
+    /// straight into the Trainer's space. Info.plist says which this build is.
+    static var appName: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Galaxy Link" }
+    static var space: String { Bundle.main.object(forInfoDictionaryKey: "GalaxySpace") as? String ?? "" }
+
+    /// The page this app opens on.
+    static var startPage: URL {
+        space.isEmpty ? address : URL(string: "http://127.0.0.1:\(port)/?space=\(space)#/\(space)")!
+    }
+
     static var token: String? {
         let token = (try? String(contentsOf: home.appendingPathComponent("token"), encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -87,11 +97,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
 
         let app = NSMenu()
-        app.addItem(withTitle: "About Galaxy Link", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        app.addItem(withTitle: "About \(Link.appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         app.addItem(.separator())
-        app.addItem(withTitle: "Hide Galaxy Link", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        app.addItem(withTitle: "Quit Galaxy Link", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        main.addItem(submenu: app, title: "Galaxy Link")
+        app.addItem(withTitle: "Hide \(Link.appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "Quit \(Link.appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(submenu: app, title: Link.appName)
 
         let edit = NSMenu(title: "Edit")
         edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
@@ -150,7 +160,7 @@ final class LinkWindowController: NSWindowController, WKNavigationDelegate, WKUI
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
-        window.title = "Galaxy Link"
+        window.title = Link.appName
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = false
@@ -204,7 +214,7 @@ final class LinkWindowController: NSWindowController, WKNavigationDelegate, WKUI
         let token = Link.token ?? ""
         let script = "window.__GALAXY__ = Object.freeze({ token: \(Self.jsString(token)), app: true });"
         content.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        webView.load(URLRequest(url: Link.address))
+        webView.load(URLRequest(url: Link.startPage))
     }
 
     func zoom(_ step: CGFloat?) {

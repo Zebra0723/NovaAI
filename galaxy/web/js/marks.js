@@ -9,10 +9,11 @@ export const MEMBERS = {
   nova: { name: "Nova", sense: "Sight", role: "On your screen, one ⌃Space away" },
   nebula: { name: "Nebula", sense: "Touch", role: "Gestures, on your Mac" },
   zenith: { name: "Zenith", sense: "Time", role: "Commands the long missions" },
+  trainer: { name: "Trainer", sense: "Practice", role: "Twelve minutes a day with every member" },
 };
 export const ORDER = ["comet", "orbit", "nova", "nebula", "zenith"];
 /** The member colours as plain values, for SVG attributes (which can't read CSS variables). */
-export const HEX = { comet: "#d97706", orbit: "#dc2626", nova: "#6d4aff", nebula: "#059669", zenith: "#2563eb", you: "#1c1917" };
+export const HEX = { comet: "#d97706", orbit: "#dc2626", nova: "#6d4aff", nebula: "#059669", zenith: "#2563eb", trainer: "#be185d", you: "#1c1917" };
 export const hex = (id) => HEX[id] ?? "#78716c";
 
 const GLYPHS = {
@@ -34,6 +35,12 @@ const GLYPHS = {
   zenith: `<path d="M4.5 17.5 12 6l7.5 11.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
     <circle cx="12" cy="6" r="2" fill="currentColor"/>
     <path d="M2.5 20.5h19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".45"/>`,
+  // A stopwatch: Trainer's twelve minutes.
+  trainer: `<circle cx="12" cy="13.6" r="7.4" stroke="currentColor" stroke-width="1.8" fill="none"/>
+    <path d="M12 13.6 15.2 10.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+    <circle cx="12" cy="13.6" r="1.6" fill="currentColor"/>
+    <path d="M9.6 3h4.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+    <path d="M18.4 6.2l1.3-1.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity=".55"/>`,
   you: `<circle cx="12" cy="8.6" r="3.6" fill="currentColor"/>
     <path d="M4.8 20.2c.9-3.8 3.6-5.8 7.2-5.8s6.3 2 7.2 5.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>`,
   other: `<circle cx="12" cy="12" r="5" fill="currentColor"/>`,

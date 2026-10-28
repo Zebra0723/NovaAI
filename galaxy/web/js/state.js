@@ -12,6 +12,11 @@ export const state = {
   events: [],
   pending: { version: 0, pending: [] },
   approvals: [],
+  // Galaxy Trainer: the overview, one member's detail while its page is open, and every 1:1 thread.
+  training: null,
+  trainingFocus: "",
+  trainingDetail: {},
+  threads: {},
 };
 
 export function subscribe(fn) {
@@ -57,6 +62,41 @@ async function refresh() {
   state.approvals = approvals;
   connected(true);
   changed("data");
+  // Training is newer than the rest of Link: an older galaxyd just has none.
+  const [training, detail] = await Promise.all([
+    api.training().catch(() => null),
+    state.trainingFocus ? api.trainingMember(state.trainingFocus).catch(() => null) : null,
+  ]);
+  const before = JSON.stringify([state.training, detail && state.trainingDetail[detail.member]]);
+  state.training = training;
+  if (detail) state.trainingDetail[detail.member] = { ...detail, thread: undefined };
+  if (JSON.stringify([state.training, detail && state.trainingDetail[detail.member]]) !== before) changed("training");
+}
+
+/** The member whose training page is open, so its program and playbook stay fresh. */
+export function focusTraining(id) {
+  if (state.trainingFocus === id) return;
+  state.trainingFocus = id;
+  if (id) poke();
+}
+
+export let newThreadIDs = new Set();
+let lastThreadID = 0;
+
+async function threadLoop() {
+  for (;;) {
+    try {
+      const fresh = (await api.trainingThreads(lastThreadID, lastThreadID ? 25 : 0)) ?? [];
+      if (fresh.length) {
+        newThreadIDs = new Set(lastThreadID ? fresh.map((m) => m.id) : []);
+        for (const m of fresh) (state.threads[m.member] ??= []).push(m);
+        lastThreadID = fresh[fresh.length - 1].id;
+        changed("thread");
+      } else if (!lastThreadID) await pause(4000);
+    } catch {
+      await pause(4000);
+    }
+  }
 }
 
 async function refreshLoop() {
@@ -113,6 +153,7 @@ export function start() {
   refreshLoop();
   chatLoop();
   approvalsLoop();
+  threadLoop();
 }
 
 /** Re-reads everything now, after you've changed something. */

@@ -8,7 +8,8 @@ import { $, $$, ago, clock, dayLabel, esc, nameOf, richText, shortDate, toast } 
 
 const bodiesInOrder = () => {
   const list = state.overview?.bodies ?? ORDER.map((id) => ({ id, name: MEMBERS[id].name, joined: false, online: false, powers: [] }));
-  return [...list].sort((a, b) => rank(a.id) - rank(b.id));
+  // The trainer has its own space; it isn't one of the members you see on the map.
+  return list.filter((b) => b.id !== "trainer").sort((a, b) => rank(a.id) - rank(b.id));
 };
 const rank = (id) => (ORDER.includes(id) ? ORDER.indexOf(id) : 99);
 const byId = (id) => bodiesInOrder().find((b) => b.id === id);

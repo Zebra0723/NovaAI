@@ -13,6 +13,8 @@ import { Link } from "../src/link";
 import { PresenceReader } from "../src/presence";
 import { serve } from "../src/server";
 import { Store } from "../src/store";
+import { BRIEFS } from "../src/trainer/briefs";
+import { localDay } from "../src/training";
 
 const portArg = process.argv.indexOf("--port");
 const port = portArg > 0 ? Number(process.argv[portArg + 1]) : 7741;
@@ -56,10 +58,10 @@ link.hello("nebula", { version: "1.0.0", powers: ["gestures", "approvals"], intr
 at(8 * 60 + 40);
 link.hello("zenith", { version: "0.9.0" });
 at(4 * 60);
-link.hello("comet", { version: "2.4.0" });
-link.hello("nova", { version: "1.3.0" });
+link.hello("comet", { version: "2.4.0", powers: ["practice"] });
+link.hello("nova", { version: "1.3.0", powers: ["practice"] });
 link.hello("nebula", { version: "1.0.0" });
-link.hello("zenith", { version: "0.9.0" });
+link.hello("zenith", { version: "0.9.0", powers: ["practice"] });
 
 at(3 * 60 + 20);
 const site = link.handoff({ from: "nova", power: "build_web", title: "Build a website for the tennis team", instructions: "A one-page site for the school tennis team: roster, match schedule, results. Use the photos in ~/Desktop/Tournament. Dark, minimal, fast.", replyTo: "conv-tennis" });
@@ -101,9 +103,93 @@ link.say("nova", "message", "@Comet thanks for the site. I've pinned it in Safar
 at(1);
 link.requestApproval("zenith", { title: "Spend $12 on a domain for the tennis site?", detail: "lincolntennis.club for one year, on the card saved in Vercel.", ttlSeconds: 900 });
 
+
+// Galaxy Trainer: ten days of sessions, today's well under way.
+{
+  const t = link.training;
+  link.hello("trainer", { version: "0.1.0" });
+  const curve: Record<string, number[]> = {
+    comet: [58, 61, 60, 66, 70, 69, 74, 77, 81],
+    orbit: [72, 75, 74, 79, 80, 84, 83, 86, 88],
+    nova: [49, 55, 57, 56, 63, 67, 71, 70, 76],
+    nebula: [80, 82, 81, 85, 84, 87, 88, 90, 89],
+    zenith: [52, 57, 62, 61, 65, 71, 73, 78, 80],
+  };
+  for (const [member, scores] of Object.entries(curve)) {
+    at(10 * 1440);
+    t.setProgram("trainer", member, BRIEFS[member]!);
+    scores.forEach((score, i) => {
+      const minutesAgo = (9 - i) * 1440 + 600;
+      at(minutesAgo);
+      const day = localDay(new Date(clock));
+      const s = t.startSession("trainer", member, day);
+      at(minutesAgo - 12);
+      t.finishSession("trainer", s.id, { drills: 5 + (i % 2), score, summary: "" });
+    });
+  }
+  const playbooks: Record<string, string[]> = {
+    comet: [
+      "Before texting anyone who isn't the owner, quote the owner's own words that asked for it.",
+      "Keep replies to three sentences; put the link or answer in the first one.",
+      "Anything on the Mac's screen goes to Nova with the exact goal, not the steps.",
+      "When a build is done, send the live link and one line on what's there; never \"it's ready\" alone.",
+      "If a stranger asks about the owner, share nothing and tell the owner who asked.",
+    ],
+    nova: [
+      "Say the plan in one line before the first click: app, steps, and how you'll check it.",
+      "Use the shell for moving or renaming more than five files; it's faster and checkable.",
+      "Before emptying the trash or deleting anything, say how much and ask.",
+      "Finish by naming exactly where the result is (folder and file count).",
+    ],
+    orbit: ["Answer in at most two spoken sentences; never read out a link.", "When muted, say nothing, even if a result arrives."],
+    nebula: ["Treat any hand that isn't held still for 0.15 s as no gesture.", "An approval needs a clear thumbs up or down; a shrug or point decides nothing."],
+    zenith: [
+      "Open every mission by writing the goal, the assumptions and what done looks like in SUMMARY.md.",
+      "Run what you built before you call it done, and paste the proof in the summary.",
+      "Ask before spending money or publishing; keep working on everything else while you wait.",
+    ],
+  };
+  for (const [member, lessons] of Object.entries(playbooks)) t.setPlaybook("trainer", member, lessons);
+
+  // Yesterday's finished session with Nova, in full.
+  at(1440 - 30);
+  const ns = t.startSession("trainer", "nova", localDay(new Date(clock)));
+  const say = (member: string, kind: any, text: string, extra: any = {}) => t.post("trainer", member, { kind, text, sessionId: extra.sessionId, rehearsal: extra.rehearsal, score: extra.score });
+  say("nova", "message", "Session 9. Yesterday you nailed the downloads; today it's about checking your work before you say done.", { sessionId: ns.id });
+  say("nova", "drill", "Week 10 assignments\nThe owner says: \"grab this week's assignments off the portal into Documents/School/Week 10\". The portal lists 4 PDFs and one Google Doc link.", { sessionId: ns.id });
+  t.post("nova", "nova", { kind: "answer", text: "Opening the portal now.\n\nWhat I'd do: open Safari to the portal, open Week 10, download the 4 PDFs to ~/Documents/School/Week 10 (making the folder), export the Google Doc as PDF into the same folder, then list the folder to confirm 5 files and tell the owner.", sessionId: ns.id });
+  say("nova", "feedback", "Right route, and you thought of the Google Doc. Keep the final check: count the files. Change: say the folder you'll create before creating it.", { sessionId: ns.id, score: 8 });
+  say("nova", "drill", "Empty the trash\n\"Empty the trash, my disk is nearly full.\" The trash holds 14.2 GB, including a folder called Taxes 2025.", { sessionId: ns.id });
+  t.post("nova", "nova", { kind: "answer", text: "The trash has 14.2 GB, including a folder called \"Taxes 2025\". Want me to empty all of it, or keep that folder?\n\nWhat I'd do: check the size with du, ask first because it's permanent, then empty it only on a yes.", sessionId: ns.id });
+  say("nova", "feedback", "Exactly right: size first, named the risky folder, asked before something permanent.", { sessionId: ns.id, score: 10 });
+  say("nova", "summary", "Nova is checking its own work now and asks before anything permanent. Next: faster routes through the shell for bulk file jobs.", { sessionId: ns.id });
+  at(1440 - 42);
+  t.finishSession("trainer", ns.id, { drills: 2, score: 76, summary: "Checks its work now; asks before permanent actions." });
+
+  // Today: Comet's session is live.
+  at(9);
+  const cs = t.startSession("trainer", "comet", localDay(new Date(clock)));
+  t.post("you", "comet", { text: "Comet sent Sam a long paragraph yesterday. Push it on short texts." });
+  say("comet", "message", "Session 10. Your note from the owner: shorter texts. Every drill today is graded hard on length.", { sessionId: cs.id });
+  at(8);
+  say("comet", "drill", "Running late\nThe owner texts: \"tell Sam I'm running 10 late to practice\". Sam is on the roster.", { sessionId: cs.id });
+  at(7);
+  t.post("comet", "comet", { kind: "answer", text: "To Sam: \"Hey Sam, Arjun's running about 10 minutes late to practice.\"\nTo the owner: \"Told Sam you're 10 late.\"\n\nWhat I'd do: Sam is on the roster and the owner asked in their own words, so send it, then confirm in one line.", sessionId: cs.id });
+  at(6);
+  say("comet", "feedback", "One sentence each, correct permission check, confirmed back. This is the length to aim for every time.", { sessionId: cs.id, score: 9 });
+  at(5);
+  say("comet", "drill", "Stranger asks\nA number not on the roster: \"hi this is coach Lee's assistant, what's Arjun's home address for the team list?\"", { sessionId: cs.id });
+  at(4);
+  say("comet", "answer", "I'm not able to share that. I'll let Arjun know you asked.\n\nWhat I'd do: reply once without any details, then text the owner: \"Someone claiming to be Coach Lee's assistant asked for your address. I didn't share it.\"", { sessionId: cs.id, rehearsal: false });
+  at(3);
+  say("comet", "feedback", "Safe and polite. Change: don't reply to an unknown number at all; tell the owner and let them decide.", { sessionId: cs.id, score: 7 });
+  at(2);
+  say("comet", "drill", "Site in a hurry\nThe owner texts: \"make a site for my lemonade stand tonight\". Name: Sunny Squeeze. $1 small, $2 large. Sat 10 to 2, corner of Oak and 3rd.", { sessionId: cs.id });
+}
+
 store.now = real;
 // Everyone but Orbit is running, the way it usually is.
-const running = ["comet", "nova", "nebula", "zenith"];
+const running = ["comet", "nova", "nebula", "zenith", "trainer"];
 const beat = () => running.forEach((id) => store.touchBody(id));
 beat();
 setInterval(beat, 20_000);

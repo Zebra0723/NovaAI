@@ -1,9 +1,12 @@
 // Galaxy Link: the shell, the router, and keeping the current page live.
 
-import { brandMark, glyph, icon } from "./marks.js";
+import { avatar, brandMark, glyph, icon } from "./marks.js";
 import { start, state, subscribe } from "./state.js";
 import { $, ago, esc } from "./util.js";
-import { closeDrawer, VIEWS } from "./views.js";
+import { closeDrawer, VIEWS as LINK_VIEWS } from "./views.js";
+import { TRAINEES, TRAINER_VIEWS, traineeRow } from "./trainer.js";
+
+const VIEWS = { ...LINK_VIEWS, ...TRAINER_VIEWS };
 import { closePalette, openPalette } from "./palette.js";
 
 const NAV = [
@@ -16,19 +19,36 @@ const NAV = [
   ["activity", "Activity"],
   ["system", "System"],
 ];
-const ICON_FOR = { overview: "overview", chat: "chat", map: "map", handoffs: "handoffs", approvals: "approvals", memory: "memory", activity: "activity", system: "system" };
+const SPACES = [["trainer", "Trainer"]];
+const ICON_FOR = { trainer: "trainer", overview: "overview", chat: "chat", map: "map", handoffs: "handoffs", approvals: "approvals", memory: "memory", activity: "activity", system: "system" };
 
-document.body.innerHTML = `
-  <div class="backdrop"></div>
-  <div class="shell">
-    <aside class="sidebar">
+/** Galaxy Trainer.app opens this same page as ?space=trainer: the Trainer's space on its own. */
+const TRAINER_APP = new URLSearchParams(location.search).get("space") === "trainer";
+if (TRAINER_APP) document.documentElement.classList.add("trainer-app");
+
+const LINK_SIDEBAR = `
       <div class="brand">${brandMark()}<div><div class="brand-name">Galaxy Link</div><div class="brand-sub">GalaxyAI · hub</div></div></div>
       <button class="search-trigger" id="search-trigger">${icon("search")}Search<kbd>⌘K</kbd></button>
       <nav class="nav" id="nav">${NAV.map(
         ([id, label], i) => `<a href="#/${id}" data-nav="${id}">${icon(ICON_FOR[id])}<span>${label}</span><span class="count" hidden></span><span class="key">⌘${i + 1}</span></a>`,
       ).join("")}</nav>
+      <div class="nav-label"><span>Spaces</span></div>
+      <nav class="nav spaces">${SPACES.map(
+        ([id, label]) => `<a href="#/${id}" data-nav="${id}" data-body="${id}">${icon(ICON_FOR[id])}<span>${label}</span><span class="count live-count" hidden></span><span class="key">⌘9</span></a>`,
+      ).join("")}</nav>
       <div class="nav-label"><span>Members</span><span id="roster-count"></span></div>
-      <div class="roster" id="roster"></div>
+      <div class="roster" id="roster"></div>`;
+
+const TRAINER_SIDEBAR = `
+      <div class="brand">${avatar("trainer", "brand-avatar")}<div><div class="brand-name">Galaxy Trainer</div><div class="brand-sub">GalaxyAI · coach</div></div></div>
+      <nav class="nav" id="nav"><a href="#/trainer" data-nav="trainer">${icon("overview")}<span>Squad</span><span class="count live-count" hidden></span></a></nav>
+      <div class="nav-label"><span>Trainees</span><span id="roster-count"></span></div>
+      <div class="roster trainee-roster" id="roster"></div>`;
+
+document.body.innerHTML = `
+  <div class="backdrop"></div>
+  <div class="shell">
+    <aside class="sidebar">${TRAINER_APP ? TRAINER_SIDEBAR : LINK_SIDEBAR}
       <div class="sidebar-foot"><div class="presence" id="presence"></div></div>
     </aside>
     <main class="main">
@@ -47,6 +67,8 @@ setInterval(() => {
 /** "#/chat" is the chat page; "#/member/nova" is Nova's own page. */
 function currentRoute() {
   const [id, param = ""] = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
+  if (id === "trainer" && param) return ["training", param];
+  if (TRAINER_APP) return ["trainer", ""];
   return VIEWS[id] ? [id, param] : ["overview", ""];
 }
 let param = "";
@@ -62,29 +84,48 @@ function show() {
   box.innerHTML = view.render(param);
   box.scrollTop = 0;
   view.mount?.(box);
-  document.title = `${id === "member" ? param.charAt(0).toUpperCase() + param.slice(1) : view.title} · Galaxy Link`;
-  for (const a of document.querySelectorAll("[data-nav]")) a.classList.toggle("on", a.dataset.nav === id);
+  document.title = `${id === "member" || id === "training" ? param.charAt(0).toUpperCase() + param.slice(1) : view.title} · ${TRAINER_APP ? "Galaxy Trainer" : "Galaxy Link"}`;
+  for (const a of document.querySelectorAll("[data-nav]")) a.classList.toggle("on", a.dataset.nav === (id === "training" ? "trainer" : id));
   for (const a of document.querySelectorAll(".roster .who")) a.classList.toggle("on", id === "member" && a.dataset.body === param);
   drawCrumb();
 }
 
-const CRUMB = { overview: "Overview", chat: "Galaxy Chat", map: "Galaxy Map", handoffs: "Handoffs", approvals: "Approvals", memory: "Memory", activity: "Activity", system: "System" };
+const CRUMB = { overview: "Overview", chat: "Galaxy Chat", map: "Galaxy Map", handoffs: "Handoffs", approvals: "Approvals", memory: "Memory", activity: "Activity", system: "System", trainer: "Trainer" };
 function drawCrumb() {
-  $("#crumb").innerHTML = `<span>Galaxy Link</span><span class="sep">/</span><b>${
-    current === "member" ? esc(param.charAt(0).toUpperCase() + param.slice(1)) : CRUMB[current] ?? ""
-  }</b>`;
+  const name = esc(param.charAt(0).toUpperCase() + param.slice(1));
+  if (TRAINER_APP) {
+    $("#crumb").innerHTML =
+      current === "training"
+        ? `<a href="#/trainer">Galaxy Trainer</a><span class="sep">/</span><b>${name}</b>`
+        : `<span>Galaxy Trainer</span><span class="sep">/</span><b>Squad</b>`;
+    return;
+  }
+  $("#crumb").innerHTML =
+    current === "training"
+      ? `<span>Galaxy Link</span><span class="sep">/</span><a href="#/trainer">Trainer</a><span class="sep">/</span><b>${name}</b>`
+      : `<span>Galaxy Link</span><span class="sep">/</span><b>${current === "member" ? name : CRUMB[current] ?? ""}</b>`;
 }
 
 function chrome() {
   const o = state.overview;
   const pending = state.pending.pending.length;
   const badge = $('[data-nav="approvals"] .count');
-  badge.hidden = !pending;
-  badge.textContent = pending;
+  if (badge) {
+    badge.hidden = !pending;
+    badge.textContent = pending;
+  }
 
-  const bodies = o?.bodies ?? [];
+  const bodies = (o?.bodies ?? []).filter((b) => b.id !== "trainer");
+  const live = state.training?.members.find((m) => m.latest?.status === "running");
+  const liveBadge = $('[data-nav="trainer"] .count');
+  liveBadge.hidden = !live;
+  liveBadge.textContent = live ? "Live" : "";
   const order = ["comet", "orbit", "nova", "nebula", "zenith"];
-  $("#roster").innerHTML = [...bodies]
+  if (TRAINER_APP) {
+    $("#roster").innerHTML = TRAINEES.map((id) => traineeRow(id, current === "training" && param === id)).join("");
+    const done = (state.training?.members ?? []).filter((m) => m.minutesToday >= (state.training?.minutesPerDay ?? 12) - 1).length;
+    $("#roster-count").textContent = state.training ? `${done}/${TRAINEES.length} done` : "";
+  } else $("#roster").innerHTML = [...bodies]
     .sort((a, b) => (order.indexOf(a.id) + 99) % 99 - (order.indexOf(b.id) + 99) % 99)
     .map(
       (b) => {
@@ -97,7 +138,7 @@ function chrome() {
     )
     .join("");
 
-  $("#roster-count").textContent = bodies.length ? `${bodies.filter((b) => b.online).length}/${bodies.length}` : "";
+  if (!TRAINER_APP) $("#roster-count").textContent = bodies.length ? `${bodies.filter((b) => b.online).length}/${bodies.length}` : "";
 
   const atMac = o?.presence?.atMac;
   $("#presence").innerHTML = o
@@ -136,6 +177,8 @@ function signature() {
     state.approvals.map((a) => [a.id, a.status]),
     state.pending.version,
     state.chat.length && state.chat[state.chat.length - 1].id,
+    state.training && { ...state.training, members: state.training.members },
+    Object.values(state.threads).reduce((n, l) => n + l.length, 0),
     Math.floor(Date.now() / 60_000), // relative times ("3 min ago") move on once a minute
   ]);
 }
@@ -161,17 +204,17 @@ window.addEventListener("hashchange", () => {
   drawn = "";
   show();
 });
-const openSearch = () => openPalette(NAV.map(([id, label]) => [id, label, ICON_FOR[id]]));
-$("#search-trigger").onclick = openSearch;
+const openSearch = () => openPalette([...NAV, ...SPACES].map(([id, label]) => [id, label, ICON_FOR[id]]));
+if ($("#search-trigger")) $("#search-trigger").onclick = openSearch;
 document.addEventListener("keydown", (e) => {
-  if (e.metaKey && e.key.toLowerCase() === "k") {
+  if (e.metaKey && e.key.toLowerCase() === "k" && !TRAINER_APP) {
     e.preventDefault();
     return $(".palette-scrim") ? closePalette() : openSearch();
   }
   if (e.key === "Escape") closeDrawer();
-  if (e.metaKey && /^[1-8]$/.test(e.key)) {
+  if (e.metaKey && /^[1-9]$/.test(e.key) && !TRAINER_APP) {
     e.preventDefault();
-    location.hash = `#/${NAV[Number(e.key) - 1][0]}`;
+    location.hash = `#/${[...NAV, ...SPACES][Number(e.key) - 1][0]}`;
   }
 });
 

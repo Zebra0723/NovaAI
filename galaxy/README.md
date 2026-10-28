@@ -61,3 +61,25 @@ D="/Users/$U/Library/Application Support/Galaxy"               # once
 sudo mkdir -p "$D" && sudo cp ~/Library/Application\ Support/Galaxy/token "$D"/
 sudo chown -R $U "$D" && sudo chmod 700 "$D"
 ```
+
+## Galaxy Trainer
+
+Twelve minutes a day with every member, so each one does what it does as reliably as it can.
+
+- **A session** (`src/trainer/coach.ts`): the trainer reads what the member really did since last
+  time and any note you left, rewrites its program (focus, rubric, scenario bank), sets four to six
+  drills, grades each answer out of 10, and rewrites the member's **playbook**: up to twelve lessons
+  that go into that member's own prompt through `/v1/context`.
+- **Drills are dry runs.** Comet, Nova and Zenith answer their own drills with their real brain and
+  no tools (power `practice`). Orbit and Nebula are rehearsed by the trainer, and marked as such.
+- **Cost:** the trainer runs `claude -p` on your Max plan (never an API key), with no tools.
+  Nova answers its drills with its own API key, the same way it answers you (a few short calls a day).
+- **Where to watch:** the Trainer space in Galaxy Link (sidebar, ⌘9), or **Galaxy Trainer.app**, the
+  same space as its own app. Every member has a live 1:1 with the trainer; leave notes there, switch
+  off any lesson you disagree with, or start a session with *Train now* (it still counts against the
+  member's twelve minutes).
+- **Settings** (environment of `ai.galaxy.trainer`): `GALAXY_TRAINER_MINUTES` (12),
+  `GALAXY_TRAINER_HOUR` (10: sessions start from 10:00, and catch up if the Mac was asleep),
+  `GALAXY_TRAINER_MODEL` (sonnet).
+- `galaxy/install.sh` installs it as the login agent `ai.galaxy.trainer`; `install-all.sh` also builds
+  Galaxy Trainer.app (`app/build-app.sh --trainer --install`).

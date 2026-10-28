@@ -63,6 +63,13 @@ export const api = {
   approvals: () => call("GET", "/v1/approvals?limit=60"),
   pending: (since = 0, wait = 0) =>
     call("GET", `/v1/approvals/pending?since=${since}${wait ? `&wait=${wait}` : ""}`, undefined, { timeout: wait ? (wait + 10) * 1000 : 10_000 }),
+  training: () => call("GET", "/v1/training"),
+  trainingMember: (id) => call("GET", `/v1/training/${id}`),
+  trainingThreads: (after = 0, wait = 0) =>
+    call("GET", `/v1/training/threads?after=${after}${wait ? `&wait=${wait}` : ""}`, undefined, { timeout: wait ? (wait + 10) * 1000 : 10_000 }),
+  trainNow: (id) => call("POST", `/v1/training/${id}/train`, {}),
+  noteToTrainer: (id, text) => call("POST", `/v1/training/${id}/thread`, { kind: "note", text }),
+  setLesson: (id, active) => call("PATCH", `/v1/training/lessons/${id}`, { active }),
   introduce: () => call("POST", "/v1/introductions"),
   decide: (id, approve) => call("POST", `/v1/approvals/${id}/decide`, { decision: approve ? "approve" : "reject", via: "app" }),
 };
