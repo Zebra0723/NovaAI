@@ -210,10 +210,10 @@ export class Training {
     if (!columns("training_sessions").includes("trigger")) this.db.exec("alter table training_sessions add column trigger text not null default 'night'");
     if (!columns("practice").includes("kind")) this.db.exec("alter table practice add column kind text not null default 'practice'");
     this.db.exec("create table if not exists training_meta (key text primary key, value text not null)");
-    // Training 0.1 recorded sessions that never really ran. Start everyone again from their brief, once.
-    if (!this.db.query("select 1 from training_meta where key = 'reset-0.2'").get()) {
+    // Sessions before 0.3 could end in seconds without really running. Start everyone again from their brief, once.
+    if (!this.db.query("select 1 from training_meta where key = 'reset-0.3'").get()) {
       this.wipe();
-      this.db.query("insert into training_meta (key, value) values ('reset-0.2', ?)").run(String(this.now()));
+      this.db.query("insert into training_meta (key, value) values ('reset-0.3', ?)").run(String(this.now()));
     }
   }
 
