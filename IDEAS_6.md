@@ -78,7 +78,7 @@ Each of these changes what the whole Galaxy is.
 41. **Cosmos: the Galaxy as one app.** One window where every member lives together, and you never think about which one to ask.
 42. **Andromeda: a Galaxy for others.** Spin up a Galaxy for a family member or friend, with your permission, sharing nothing private.
 43. **Starlink: the Galaxy talks to other AIs.** It uses ChatGPT, Gemini or any other AI as a tool when one is better at something, while keeping your memory in the Galaxy.
-44. **Nebula Forge: the Galaxy builds its own members.** Describe a new member and it builds, tests and adds it, with an intro in Galaxy Chat.
+44. **Genesis: the Galaxy builds its own members.** Describe a new member and it builds, tests and adds it, with an intro in Galaxy Chat.
 45. **Eclipse: privacy mode.** Everything runs locally and nothing leaves the Mac, at the flip of a switch.
 46. **Apollo: the Galaxy goes portable.** A tiny dedicated device (an old iPhone in a stand) that is only the Galaxy, always ready.
 47. **Horizon: a long-term memory of your life.** It remembers the important things across years (people, places, milestones, decisions) and brings them back when they matter.
