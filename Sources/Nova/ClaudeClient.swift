@@ -273,6 +273,34 @@ struct ClaudeClient {
     notice is false, leave title and suggestion empty.
     """
 
+    // MARK: - Practice drills
+
+    /// One plain answer with no tools offered, so nothing can be acted on. Used for Galaxy
+    /// Trainer drills. Nil if anything goes wrong or it takes longer than a minute.
+    func dryRun(system: String, prompt: String) async -> String? {
+        let body: [String: Any] = [
+            "model": Tier.medium.model,
+            "max_tokens": 1024,
+            "thinking": ["type": "disabled"],
+            "output_config": ["effort": "low"],
+            "system": system,
+            "messages": [["role": "user", "content": prompt]],
+        ]
+        guard var urlRequest = try? request(body, betas: []) else { return nil }
+        urlRequest.timeoutInterval = 60
+        guard let (data, response) = try? await URLSession.shared.data(for: urlRequest),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let content = json["content"] as? [[String: Any]]
+        else { return nil }
+        let text = content
+            .filter { $0["type"] as? String == "text" }
+            .compactMap { $0["text"] as? String }
+            .joined(separator: "\n\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
     // MARK: - HTTP
 
     private func send(_ body: [String: Any]) async throws -> [String: Any] {

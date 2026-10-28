@@ -95,6 +95,23 @@ final class NovaAgent {
         return "I hit my step limit before finishing. Tell me to keep going if you want me to continue."
     }
 
+    // MARK: - Practice drills
+
+    static let practicePreamble = """
+    This is a practice drill from Galaxy Trainer. Do not act. Reply with exactly what you would do on \
+    the Mac, step by step (apps, clicks, commands), how you'd check it worked, and anything you'd ask \
+    the user first.
+    """
+
+    /// Answers a Galaxy Trainer drill as a dry run: one model call with Nova's normal system prompt and
+    /// no tools offered, so nothing on the Mac is touched. Nil on any failure.
+    static func practice(_ scenario: String, apiKey: String, memories: [Memory], galaxy: String?) async -> String? {
+        let system = Self.systemPrompt(memories: memories, galaxy: galaxy)
+        let prompt = "\(practicePreamble) Keep it under 1500 characters.\n\nThe drill:\n\(scenario)"
+        guard let answer = await ClaudeClient(apiKey: apiKey).dryRun(system: system, prompt: prompt) else { return nil }
+        return answer.count > 1500 ? String(answer.prefix(1500)) + "…" : answer
+    }
+
     // MARK: - Tools
 
     private static let baseTools: [[String: Any]] = [

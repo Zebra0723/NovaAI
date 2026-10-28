@@ -92,7 +92,9 @@ actor GalaxyLink {
     @discardableResult
     func hello() async -> Bool {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-        return await call("POST", "/v1/hello", body: ["name": "Nova", "version": version]) != nil
+        // "practice": Nova answers Galaxy Trainer drills (dry runs only; see NovaLink).
+        let body: [String: Any] = ["name": "Nova", "version": version, "powers": ["practice"]]
+        return await call("POST", "/v1/hello", body: body) != nil
     }
 
     /// False when Link has never heard of Nova (it restarted with a fresh state), so say hello again.
@@ -169,6 +171,14 @@ actor GalaxyLink {
     /// Results and messages for the user that Link routed to the screen, waiting up to 25 seconds.
     func inbox() async -> [InboxItem]? {
         decode([InboxItem].self, await call("GET", "/v1/inbox?wait=25", timeout: 35))
+    }
+
+    // MARK: - Practice
+
+    /// Nova's dry-run answer to a Galaxy Trainer practice drill.
+    @discardableResult
+    func practiceAnswer(id: String, answer: String) async -> Bool {
+        await call("POST", "/v1/practice/\(id)/answer", body: ["answer": answer]) != nil
     }
 
     func isRunning() async -> Bool {

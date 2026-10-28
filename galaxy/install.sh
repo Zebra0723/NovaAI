@@ -11,7 +11,8 @@ DOMAIN="gui/$(id -u)"
 
 if [ "${1:-}" = "--remove" ]; then
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-  rm -f "$PLIST" "$HOME/.local/bin/galaxy"
+  launchctl bootout "$DOMAIN/ai.galaxy.trainer" 2>/dev/null || true
+  rm -f "$PLIST" "$HOME/Library/LaunchAgents/ai.galaxy.trainer.plist" "$HOME/.local/bin/galaxy"
   echo "Galaxy Link removed. Your memories are still in ~/Library/Application Support/Galaxy."
   exit 0
 fi
@@ -36,10 +37,25 @@ chmod +x "$HOME/.local/bin/galaxy"
 
 # bootout returns before the job is gone, and bootstrapping into that gap fails with
 # "Bootstrap failed: 5: Input/output error". Wait for it to go, and retry once.
-launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-for _ in $(seq 20); do launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break; sleep 0.5; done
-launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null || { sleep 2; launchctl bootstrap "$DOMAIN" "$PLIST"; }
-launchctl kickstart -k "$DOMAIN/$LABEL"
+load_agent() { # load_agent LABEL PLIST
+  launchctl bootout "$DOMAIN/$1" 2>/dev/null || true
+  for _ in $(seq 20); do launchctl print "$DOMAIN/$1" >/dev/null 2>&1 || break; sleep 0.5; done
+  launchctl bootstrap "$DOMAIN" "$2" 2>/dev/null || { sleep 2; launchctl bootstrap "$DOMAIN" "$2"; }
+  launchctl kickstart -k "$DOMAIN/$1"
+}
+load_agent "$LABEL" "$PLIST"
+
+# Galaxy Trainer: daily practice for every member, through Claude Code on your plan.
+TRAINER_PLIST="$HOME/Library/LaunchAgents/ai.galaxy.trainer.plist"
+CLAUDE="$(command -v claude || true)"
+if [ -n "$CLAUDE" ]; then
+  PATHS="$(dirname "$BUN"):$(dirname "$CLAUDE"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  sed -e "s|__BUN__|$BUN|g" -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" -e "s|__PATH__|$PATHS|g" \
+    "$ROOT/launchd/ai.galaxy.trainer.plist" > "$TRAINER_PLIST"
+  load_agent ai.galaxy.trainer "$TRAINER_PLIST"
+else
+  echo "Galaxy Trainer needs Claude Code (claude) logged into your plan; skipping it for now." >&2
+fi
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   if "$HOME/.local/bin/galaxy" status >/dev/null 2>&1; then break; fi

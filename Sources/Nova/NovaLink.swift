@@ -10,6 +10,8 @@ import Foundation
 final class NovaLink {
     private let controller: NovaController
     private var loops: [Task<Void, Never>] = []
+    /// True while a Galaxy Trainer drill is being answered; drills run one at a time.
+    private var practicing = false
 
     init(controller: NovaController) {
         self.controller = controller
@@ -45,7 +47,14 @@ final class NovaLink {
                         try? await Task.sleep(nanoseconds: 10_000_000_000)
                         continue
                     }
-                    for item in items { self?.controller.showDelivery(item.text) }
+                    for item in items {
+                        // Practice drills are dry runs answered to Link, never shown on screen.
+                        if item.kind == "practice" {
+                            self?.practice(item)
+                        } else {
+                            self?.controller.showDelivery(item.text)
+                        }
+                    }
                 }
             },
         ]
@@ -54,6 +63,22 @@ final class NovaLink {
     func stop() async {
         loops.forEach { $0.cancel() }
         await GalaxyLink.shared.goodbye()
+    }
+
+    /// A Galaxy Trainer drill: Nova says what it would do, without doing any of it. Only the model
+    /// is called (no tools, screen, shell, iMessage, memory writes or UI). One at a time, and skipped
+    /// while Nova is busy with real work so it never gets in the way of the user.
+    private func practice(_ item: GalaxyLink.InboxItem) {
+        guard !practicing, !controller.isWorking, let key = Keychain.apiKey else { return }
+        practicing = true
+        let memories = NovaStore.shared.memories
+        Task { [weak self] in
+            let galaxy = await GalaxyLink.shared.promptContext()
+            if let answer = await NovaAgent.practice(item.text, apiKey: key, memories: memories, galaxy: galaxy) {
+                await GalaxyLink.shared.practiceAnswer(id: item.taskId, answer: answer)
+            }
+            self?.practicing = false
+        }
     }
 
     /// Memories saved while Link wasn't running go up first; then Link's copy comes down.

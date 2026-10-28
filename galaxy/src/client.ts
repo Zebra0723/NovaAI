@@ -25,7 +25,7 @@ export interface LinkTask {
 
 export interface LinkInboxItem {
   id: number;
-  kind: "task_result" | "message";
+  kind: "task_result" | "message" | "practice";
   taskId: string;
   text: string;
   replyTo: string;
@@ -192,6 +192,11 @@ export class GalaxyLink {
   /** Approvals waiting on the user, and a version that changes whenever that list does. */
   pendingApprovals(timeoutMs = 10_000) {
     return this.call<{ version: number; pending: LinkApproval[] }>("GET", "/v1/approvals/pending", undefined, timeoutMs);
+  }
+
+  /** Answers a Galaxy Trainer drill (an inbox item of kind "practice"). A dry run: the answer says what this body would do. */
+  practiceAnswer(id: string, answer: string) {
+    return this.call("POST", `/v1/practice/${encodeURIComponent(id)}/answer`, { answer });
   }
 
   /** A message for the user, delivered wherever they are. Only ever for something they asked for. */

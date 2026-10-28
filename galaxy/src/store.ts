@@ -85,7 +85,7 @@ export interface Approval {
 export interface InboxItem {
   id: number;
   body: BodyID;
-  kind: "task_result" | "message";
+  kind: "task_result" | "message" | "practice";
   taskId: string;
   text: string;
   replyTo: string;

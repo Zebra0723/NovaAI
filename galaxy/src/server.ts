@@ -6,6 +6,7 @@ import { timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, sep } from "node:path";
 import { Link, LinkError } from "./link";
+import { TrainingError } from "./training";
 
 /** The Galaxy Link app's pages, served at /. */
 export const WEB_ROOT = join(import.meta.dir, "..", "web");
@@ -43,7 +44,7 @@ export async function handle(link: Link, token: string, req: Request): Promise<R
   try {
     return await route(link, token, req);
   } catch (error) {
-    if (error instanceof LinkError) return json({ error: error.message }, error.status);
+    if (error instanceof LinkError || error instanceof TrainingError) return json({ error: error.message }, error.status);
     if (error instanceof SyntaxError) return json({ error: "that isn't JSON" }, 400);
     console.error("galaxyd:", error);
     return json({ error: "something went wrong in Link" }, 500);
@@ -196,6 +197,44 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     if (!link.store.body(who)) throw new LinkError(403, "only bodies of GalaxyAI can talk in Galaxy Chat");
     const { text } = await input();
     return json(link.say(who, "message", String(text ?? "")), 201);
+  }
+
+  // --------------------------------------------------------------- training
+  const training = link.training;
+  if (path === "/v1/training" && method === "GET") return json(training.overview());
+  if (path === "/v1/training/threads" && method === "GET") {
+    return json(await training.threads(Math.max(Number(url.searchParams.get("after") ?? 0) || 0, 0), wait()));
+  }
+  const lesson = path.match(/^\/v1\/training\/lessons\/([\w-]+)$/);
+  if (lesson && method === "PATCH") return json(training.setLessonActive(needBody(), lesson[1]!, Boolean((await input()).active)));
+  const finish = path.match(/^\/v1\/training\/sessions\/([\w-]+)\/finish$/);
+  if (finish && method === "POST") return json(training.finishSession(needBody(), finish[1]!, await input()));
+  const tm = path.match(/^\/v1\/training\/([a-z][a-z0-9-]{1,31})(?:\/(program|sessions|playbook|thread|train))?$/);
+  if (tm) {
+    const [, member, part] = tm as unknown as [string, string, string | undefined];
+    if (!part && method === "GET") return json(training.member(member));
+    if (part === "program" && method === "PUT") return json(training.setProgram(needBody(), member, await input()));
+    if (part === "sessions" && method === "POST") return json(training.startSession(needBody(), member, String((await input()).day ?? "")), 201);
+    if (part === "playbook" && method === "PUT") {
+      const { lessons, sessionId } = await input();
+      return json(training.setPlaybook(needBody(), member, lessons, typeof sessionId === "string" ? sessionId : ""));
+    }
+    if (part === "thread" && method === "POST") return json(training.post(needBody(), member, await input()), 201);
+    // You ask for a session now: the trainer hears it through its inbox.
+    if (part === "train" && method === "POST") {
+      if (needBody() !== "you") throw new LinkError(403, "only you can ask for a session");
+      training.member(member);
+      link.postInbox({ body: "trainer", kind: "message", taskId: "", replyTo: "", text: `train:${member}` });
+      return json({ ok: true, trainerOnline: link.isOnline("trainer") }, 202);
+    }
+  }
+  if (path === "/v1/practice" && method === "POST") return json(training.setDrill(needBody(), await input()), 201);
+  const pr = path.match(/^\/v1\/practice\/([\w-]+)(?:\/(answer|expire))?$/);
+  if (pr) {
+    const [, id, act] = pr as unknown as [string, string, string | undefined];
+    if (act === "answer" && method === "POST") return json(training.answer(needBody(), id, (await input()).answer));
+    if (act === "expire" && method === "POST") return json(training.expireDrill(needBody(), id));
+    if (!act && method === "GET") return json(await training.awaitAnswer(id, wait()));
   }
 
   // A fresh round of introductions, from the app or `galaxy introduce`.

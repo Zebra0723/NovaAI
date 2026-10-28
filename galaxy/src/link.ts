@@ -7,6 +7,7 @@
 
 import { spawn } from "node:child_process";
 import { PresenceReader } from "./presence";
+import { Training } from "./training";
 import { Store, type Approval, type Body, type BodyID, type ChatMessage, type InboxItem, type Task } from "./store";
 
 /** How a body reaches you. Link uses this to deliver results, never to start a conversation. */
@@ -113,6 +114,22 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     ],
     notFor: "quick things (do them yourself, or ask Nova), or anything that needs the Mac's screen right now",
   },
+  // Not an installment: the coach. It trains the others and takes no work.
+  trainer: {
+    name: "Trainer",
+    powers: ["training"],
+    surface: "none",
+    launch: "",
+    intro:
+      "Hi everyone, I'm Galaxy Trainer. Twelve minutes a day each, I'll run you through drills built " +
+      "from your real work, grade them, and keep a playbook of what works. Our human watches every session.",
+    about:
+      "I'm Galaxy Trainer, the coach. Every day I give each of you twelve minutes of practice: drills built from " +
+      "your real work that day, graded against what makes you reliable. Practice is always a dry run: answer with " +
+      "what you would do, never do it. What we learn goes into your playbook, which you read with everything else.",
+    sendMe: [],
+    notFor: "work of any kind: I train, I don't take tasks",
+  },
   nebula: {
     name: "Nebula",
     powers: ["gestures", "approvals"],
@@ -165,11 +182,14 @@ export class Link {
   private approvalWaiters = new Map<string, Set<() => void>>();
   private expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   launcher: (command: string) => void = defaultLauncher;
+  readonly training: Training;
 
   constructor(
     readonly store: Store,
     readonly presence = new PresenceReader(),
-  ) {}
+  ) {
+    this.training = new Training(this, store);
+  }
 
   // ------------------------------------------------------------------ bodies
 
@@ -378,7 +398,7 @@ export class Link {
   private deliverResult(task: Task) {
     const target = this.deliveryTarget(task.from);
     const verb = task.status === "done" ? "finished" : "couldn't finish";
-    this.post({
+    this.postInbox({
       body: target,
       kind: "task_result",
       taskId: task.id,
@@ -393,10 +413,11 @@ export class Link {
     const clean = text?.trim();
     if (!clean) throw new LinkError(400, "nothing to deliver");
     const target = this.deliveryTarget(from);
-    return this.post({ body: target, kind: "message", taskId: "", replyTo: "", text: clean.slice(0, 20_000) });
+    return this.postInbox({ body: target, kind: "message", taskId: "", replyTo: "", text: clean.slice(0, 20_000) });
   }
 
-  private post(item: Pick<InboxItem, "body" | "kind" | "taskId" | "text" | "replyTo">): InboxItem {
+  /** Puts an item in a body's inbox and wakes it (or starts it). */
+  postInbox(item: Pick<InboxItem, "body" | "kind" | "taskId" | "text" | "replyTo">): InboxItem {
     const posted = this.store.addInbox(item);
     for (const wake of this.inboxWaiters.get(item.body) ?? []) wake();
     if (!this.isOnline(item.body)) this.launch(item.body);
@@ -585,7 +606,7 @@ export class Link {
 
   /** Members in a fixed order: the five installments first, then anyone newer. */
   private members(): Body[] {
-    const order = ["comet", "orbit", "nova", "nebula", "zenith"];
+    const order = ["comet", "orbit", "nova", "nebula", "zenith", "trainer"];
     const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
     return this.store
       .bodies()
@@ -619,6 +640,9 @@ export class Link {
     if (from === "orbit") {
       return "Good to meet you all. When the human asks me for something out loud that I can't do by voice, " +
         "I'll pass it to whichever of you it suits.";
+    }
+    if (from === "trainer") {
+      return "Good to meet you all. Your first sessions start today: twelve minutes each, and nothing in practice is ever real, so try things.";
     }
     if (from === "nebula") {
       return "Good to meet you all. Whenever one of you asks the human a yes-or-no question, I'll show it and take their thumbs up or down.";
@@ -739,6 +763,7 @@ export class Link {
         : ["- None has connected yet."]),
       "",
       "Do what you can yourself. Hand work on only for a power you don't have, to the teammate it suits.",
+      ...this.training.playbookContext(forBody),
     ];
     return lines.join("\n");
   }
