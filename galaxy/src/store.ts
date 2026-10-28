@@ -312,6 +312,30 @@ export class Store {
     ).reverse();
   }
 
+  // ------------------------------------------------------------------ counts
+
+  countMemories(): number {
+    return (this.db.query("select count(*) as n from memories").get() as any).n;
+  }
+
+  countChatSince(sinceMs: number): number {
+    return (this.db.query("select count(*) as n from chat where at >= ?").get(sinceMs) as any).n;
+  }
+
+  /** How many tasks are in each status, and how many finished since `sinceMs`. */
+  taskCounts(sinceMs: number): Record<TaskStatus, number> & { finishedSince: number } {
+    const counts = { queued: 0, claimed: 0, done: 0, failed: 0, cancelled: 0, finishedSince: 0 };
+    for (const row of this.db.query("select status, count(*) as n from tasks group by status").all() as any[]) {
+      if (row.status in counts) (counts as any)[row.status] = row.n;
+    }
+    counts.finishedSince = (
+      this.db
+        .query("select count(*) as n from tasks where status in ('done', 'failed') and updated_at >= ?")
+        .get(sinceMs) as any
+    ).n;
+    return counts;
+  }
+
   // ------------------------------------------------------------------- tasks
 
   addTask(t: Pick<Task, "from" | "to" | "power" | "title" | "instructions" | "replyTo">): Task {
@@ -427,6 +451,11 @@ export class Store {
   approval(id: string): Approval | null {
     const row = this.db.query("select * from approvals where id = ?").get(id) as any;
     return row ? rowToApproval(row) : null;
+  }
+
+  /** The most recent approvals, answered or not, newest first. */
+  approvals(limit = 50): Approval[] {
+    return (this.db.query("select * from approvals order by created_at desc limit ?").all(limit) as any[]).map(rowToApproval);
   }
 
   pendingApprovals(): Approval[] {

@@ -1,8 +1,23 @@
-// galaxyd's HTTP face. Loopback only, a token on every call, and no
-// browsers: a web page you happen to visit can't reach it.
+// galaxyd's HTTP face. Loopback only, a token on every call, and the only
+// web pages that can reach it are its own: the Galaxy Link app. A page you
+// happen to visit elsewhere can't.
 
 import { timingSafeEqual } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { extname, join, normalize, sep } from "node:path";
 import { Link, LinkError } from "./link";
+
+/** The Galaxy Link app's pages, served at /. */
+export const WEB_ROOT = join(import.meta.dir, "..", "web");
+const STARTED_AT = Date.now();
+const TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".woff2": "font/woff2",
+};
 
 export interface ServerOptions {
   link: Link;
@@ -40,17 +55,22 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
   const path = url.pathname;
   const method = req.method;
 
-  // A browser always says where a request came from; the bodies never do.
-  if (req.headers.get("origin") !== null || req.headers.get("sec-fetch-site") !== null) {
-    return json({ error: "Link doesn't talk to browsers" }, 403);
-  }
   // DNS rebinding: a name that resolves to 127.0.0.1 is still the wrong name.
-  const host = (req.headers.get("host") ?? "").replace(/:\d+$/, "");
+  const hostHeader = req.headers.get("host") ?? "";
+  const host = hostHeader.replace(/:\d+$/, "");
   if (host && !["127.0.0.1", "localhost", "[::1]"].includes(host)) {
     return json({ error: "wrong host" }, 403);
   }
+  // A browser always says where a request came from; the bodies never do.
+  // The one page allowed through is Link's own app, served from this origin.
+  const origin = req.headers.get("origin");
+  const site = req.headers.get("sec-fetch-site");
+  if ((site !== null && site !== "same-origin" && site !== "none") || (origin !== null && origin !== `http://${hostHeader}`)) {
+    return json({ error: "Link doesn't talk to other web pages" }, 403);
+  }
 
   if (path === "/v1/health" && method === "GET") return json({ ok: true, service: "galaxy-link" });
+  if (method === "GET" && !path.startsWith("/v1/")) return page(path);
 
   if (!sameToken(req.headers.get("authorization") ?? "", `Bearer ${token}`)) {
     return json({ error: "missing or wrong token" }, 401);
@@ -78,6 +98,7 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     return json({ ok: true });
   }
   if (path === "/v1/bodies" && method === "GET") return json(link.bodies());
+  if (path === "/v1/overview" && method === "GET") return json(link.overview(STARTED_AT));
   if (path === "/v1/presence" && method === "GET") return json(link.presence.read());
 
   // ---------------------------------------------------------------- memory
@@ -178,6 +199,10 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
 
   // ------------------------------------------------------------- approvals
   if (path === "/v1/approvals" && method === "POST") return json(link.requestApproval(needBody(), await input()), 201);
+  if (path === "/v1/approvals" && method === "GET") {
+    link.pendingApprovals(); // settles anything past its deadline first
+    return json(link.store.approvals(clamp(Number(url.searchParams.get("limit") ?? 50), 1, 500)));
+  }
   if (path === "/v1/approvals/pending" && method === "GET") {
     const since = Number(url.searchParams.get("since") ?? 0) || 0;
     return json(await link.pendingApprovalsSince(since, wait()));
@@ -198,6 +223,24 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
   if (path === "/v1/inbox" && method === "GET") return json(await link.inbox(needBody(), wait()));
 
   return json({ error: "no such thing" }, 404);
+}
+
+/** The app's static files. They hold no secrets: the token is handed to the app by its window, not served. */
+function page(path: string): Response {
+  const rel = path === "/" ? "index.html" : decodeURIComponent(path).replace(/^\/+/, "");
+  const file = normalize(join(WEB_ROOT, rel));
+  if (!file.startsWith(WEB_ROOT + sep) || !existsSync(file) || !statSync(file).isFile()) {
+    return new Response("Not here.", { status: 404, headers: { "content-type": "text/plain" } });
+  }
+  return new Response(readFileSync(file), {
+    headers: {
+      "content-type": TYPES[extname(file)] ?? "application/octet-stream",
+      "cache-control": "no-cache",
+      "content-security-policy":
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+      "x-content-type-options": "nosniff",
+    },
+  });
 }
 
 function json(value: unknown, status = 200): Response {

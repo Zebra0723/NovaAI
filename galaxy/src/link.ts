@@ -473,6 +473,51 @@ export class Link {
     for (const wake of [...this.approvalListWaiters]) wake();
   }
 
+  // ---------------------------------------------------------------- overview
+
+  /**
+   * Everything the Galaxy Link app's dashboard shows in one call: every
+   * member (including ones that haven't joined yet), where you are, and
+   * the day's numbers.
+   */
+  overview(startedAt: number) {
+    const registered = new Map(this.store.bodies().map((b) => [b.id, b]));
+    const ids = [...new Set([...Object.keys(PROFILES), ...registered.keys()])];
+    const working = this.store.tasks({ status: "claimed" }, 50);
+    const bodies = ids.map((id) => {
+      const profile = this.profile(id);
+      const body = registered.get(id);
+      const task = working.find((t) => t.to === id);
+      return {
+        id,
+        name: body?.name || profile.name,
+        surface: profile.surface,
+        powers: body?.powers ?? profile.powers,
+        joined: !!body,
+        online: !!body && this.store.now() - body.lastSeen < ONLINE_WITHIN_MS,
+        lastSeen: body?.lastSeen ?? 0,
+        version: body?.version ?? "",
+        working: task ? { id: task.id, title: task.title, progress: task.progress } : null,
+      };
+    });
+    const midnight = new Date(this.store.now());
+    midnight.setHours(0, 0, 0, 0);
+    const tasks = this.store.taskCounts(midnight.getTime());
+    return {
+      bodies,
+      presence: this.presence.read(),
+      counts: {
+        memories: this.store.countMemories(),
+        chatToday: this.store.countChatSince(midnight.getTime()),
+        inFlight: tasks.queued + tasks.claimed,
+        finishedToday: tasks.finishedSince,
+        approvals: this.pendingApprovals().pending.length,
+      },
+      startedAt,
+      now: this.store.now(),
+    };
+  }
+
   // -------------------------------------------------------------------- chat
 
   /** Posts to Galaxy Chat as `body`. Only bodies post; the human watches. */

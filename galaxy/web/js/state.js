@@ -1,0 +1,121 @@
+// What the app knows, kept fresh. Chat and approvals arrive by long poll the
+// moment they happen; the dashboard numbers refresh every few seconds.
+
+import { api, Offline } from "./api.js";
+
+const listeners = new Set();
+export const state = {
+  connected: null, // null until the first answer
+  overview: null,
+  chat: [],
+  tasks: [],
+  events: [],
+  pending: { version: 0, pending: [] },
+  approvals: [],
+};
+
+export function subscribe(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+let queued = null;
+/** One redraw per frame, told everything that changed in it. */
+export function changed(what) {
+  if (queued) {
+    queued.add(what);
+    return;
+  }
+  queued = new Set([what]);
+  requestAnimationFrame(() => {
+    const all = queued;
+    queued = null;
+    for (const fn of listeners) fn(all);
+  });
+}
+
+function connected(ok) {
+  if (state.connected !== ok) {
+    state.connected = ok;
+    changed("connection");
+  }
+}
+
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function refresh() {
+  const dayAgo = Date.now() - 7 * 86400_000;
+  const [overview, tasks, events, approvals] = await Promise.all([
+    api.overview(),
+    api.tasks(),
+    api.events(dayAgo),
+    api.approvals(),
+  ]);
+  state.overview = overview;
+  state.tasks = tasks;
+  state.events = events;
+  state.approvals = approvals;
+  connected(true);
+  changed("data");
+}
+
+async function refreshLoop() {
+  for (;;) {
+    try {
+      await refresh();
+      await pause(3000);
+    } catch (error) {
+      if (error instanceof Offline || error.status === 401) connected(false);
+      await pause(2500);
+    }
+  }
+}
+
+export let newChatIDs = new Set();
+
+async function chatLoop() {
+  for (;;) {
+    try {
+      if (!state.chat.length) {
+        state.chat = (await api.chat(0)) ?? [];
+        changed("chat");
+        if (!state.chat.length) await pause(2000);
+        continue;
+      }
+      const last = state.chat[state.chat.length - 1].id;
+      const fresh = (await api.chat(last, 25)) ?? [];
+      if (fresh.length) {
+        newChatIDs = new Set(fresh.map((m) => m.id));
+        state.chat = state.chat.concat(fresh).slice(-2000);
+        changed("chat");
+      }
+    } catch {
+      await pause(2500);
+    }
+  }
+}
+
+async function approvalsLoop() {
+  for (;;) {
+    try {
+      const next = await api.pending(state.pending.version, 25);
+      if (next && next.version !== state.pending.version) {
+        state.pending = next;
+        changed("approvals");
+      }
+    } catch {
+      await pause(2500);
+    }
+  }
+}
+
+export function start() {
+  refreshLoop();
+  chatLoop();
+  approvalsLoop();
+}
+
+/** Re-reads everything now, after you've changed something. */
+export function poke() {
+  refresh().catch(() => {});
+}
