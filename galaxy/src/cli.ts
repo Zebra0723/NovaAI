@@ -17,6 +17,7 @@ const HELP = `galaxy - Galaxy Link from Terminal
   galaxy tasks               recent handoffs between bodies
   galaxy context <body>      the prompt block a body sees
   galaxy import              merge Nova's and Orbit's own memories in (safe to rerun)
+  galaxy login               sign the background members (Trainer, Zenith) in to Claude, like Comet
   galaxy train <member>      a 12-minute test session with Galaxy Trainer, now
   galaxy trainer reset       wipe all training and start every member from its brief
   galaxy introduce           a round of introductions in Galaxy Chat, so every member knows the others
@@ -107,6 +108,49 @@ switch (command) {
       const r = await need(link.call<{ found: number; added: number }>("POST", "/v1/memory/import", { items }));
       console.log(`  ${name}: ${r.added} new of ${r.found}`);
     }
+    break;
+  }
+  case "login": {
+    // The same sign-in Comet uses: a year-long token from \`claude setup-token\`, saved where the
+    // trainer and Zenith read it, so they work from the background without Terminal's login.
+    const { spawnSync } = await import("node:child_process");
+    const { writeFileSync, chmodSync, mkdirSync } = await import("node:fs");
+    const { paths } = await import("./paths");
+    const { claudeThink } = await import("./trainer/think");
+    if (spawnSync("/bin/sh", ["-c", "command -v claude"]).status !== 0) {
+      console.error("galaxy login needs Claude Code: npm install -g @anthropic-ai/claude-code");
+      process.exit(1);
+    }
+    console.log("Opening the Claude sign-in. Approve it in the browser; a token is printed at the end.\n");
+    if (spawnSync("claude", ["setup-token"], { stdio: "inherit" }).status !== 0) {
+      console.error("\ngalaxy login: claude setup-token didn't finish. Nothing was changed.");
+      process.exit(1);
+    }
+    process.stdout.write("\nPaste the token it printed: ");
+    let token = "";
+    for await (const line of console) {
+      token = line.replace(/\s+/g, "");
+      break;
+    }
+    if (!token.startsWith("sk-ant-")) {
+      console.error("galaxy login: that doesn't look like a token (they start with sk-ant-). Nothing was changed.");
+      process.exit(1);
+    }
+    console.log("Checking it works...");
+    mkdirSync(paths.home, { recursive: true, mode: 0o700 });
+    writeFileSync(paths.claudeToken + ".new", token + "\n", { mode: 0o600 });
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = token;
+    const think = claudeThink();
+    const reply = await think("Reply with the single word: ready", 90_000);
+    if (!reply) {
+      console.error(`galaxy login: the token didn't work: ${think.lastError}. Nothing was changed.`);
+      process.exit(1);
+    }
+    const { renameSync } = await import("node:fs");
+    renameSync(paths.claudeToken + ".new", paths.claudeToken);
+    chmodSync(paths.claudeToken, 0o600);
+    console.log("Signed in. Restarting the trainer and Zenith so they use it.");
+    spawnSync("/bin/sh", ["-c", "launchctl kickstart -k gui/$(id -u)/ai.galaxy.trainer; launchctl kickstart -k gui/$(id -u)/ai.galaxy.zenith"], { stdio: "ignore" });
     break;
   }
   case "train": {

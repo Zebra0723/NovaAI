@@ -25,6 +25,8 @@ if [ -z "$BUN" ]; then
 fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Application Support/Galaxy" "$HOME/.local/bin"
+# The trainer talks to Claude through the Claude Agent SDK, like Comet.
+(cd "$ROOT" && "$BUN" install --silent)
 chmod 700 "$HOME/Library/Application Support/Galaxy"
 sed -e "s|__BUN__|$BUN|g" -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" \
   "$ROOT/launchd/$LABEL.plist" > "$PLIST"
@@ -57,6 +59,8 @@ if [ -n "$CLAUDE" ]; then
   sed -e "s|__BUN__|$BUN|g" -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" -e "s|__PATH__|$PATHS|g" -e "s|__CLAUDE__|$CLAUDE|g" \
     "$ROOT/launchd/ai.galaxy.trainer.plist" > "$TRAINER_PLIST"
   load_agent ai.galaxy.trainer "$TRAINER_PLIST"
+  [ -s "$HOME/Library/Application Support/Galaxy/claude-token" ] ||
+    echo "Galaxy Trainer: sign it in to Claude once with: galaxy login" >&2
 else
   echo "Galaxy Trainer needs Claude Code (claude) logged into your plan; skipping it for now." >&2
 fi

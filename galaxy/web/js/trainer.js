@@ -116,7 +116,7 @@ function alertHTML() {
   const st = state.training?.trainerStatus;
   if (!st || st.ok) return "";
   return `<div class="t-alert">${icon("x")}<div><b>The trainer can't reach Claude Code, so no session can run.</b><p>${esc(st.reason || "No reason given.")}</p>
-    <p class="muted">Check that Claude Code is logged in to your plan (run <code>claude</code> once in Terminal), then reinstall the trainer: <code>galaxy/install.sh</code>. Checked ${esc(ago(st.at))}.</p></div></div>`;
+    <p class="muted">Sign it in to Claude the way Comet is: run <code>galaxy login</code> in Terminal. Checked ${esc(ago(st.at))}.</p></div></div>`;
 }
 
 // ------------------------------------------------------------------ overview

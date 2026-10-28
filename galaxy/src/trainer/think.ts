@@ -1,65 +1,95 @@
-// How Galaxy Trainer thinks: one `claude -p` call on the Max plan, with no tools.
-// It only ever reads what it's given and writes text back.
+// How Galaxy Trainer thinks: Claude through the Claude Agent SDK, on your Max plan,
+// the way Comet does it. No tools, no settings, no saved sessions: it only ever reads
+// what it's given and writes text back.
+//
+// Sign-in: the year-long token `galaxy login` saves (CLAUDE_CODE_OAUTH_TOKEN), so it
+// works from the background under launchd, where Terminal's `claude` login can't be
+// reached. Never an API key: one would win over the plan, so it's removed.
 
-import { spawn } from "node:child_process";
+import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readClaudeToken } from "../paths";
 
 /** Text back, or null. When it's null, `lastError` says why. */
 export type Think = ((prompt: string, timeoutMs: number) => Promise<string | null>) & { lastError?: string };
 
-const NO_TOOLS = [
-  "Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch",
-  "Task", "Agent", "Read", "Glob", "Grep", "TodoWrite",
-];
+const DENY = "Galaxy Trainer only thinks; nothing can be run. Answer in words only.";
+const SYSTEM =
+  "You are Galaxy Trainer, the coach of GalaxyAI, a personal assistant made of several members. " +
+  "You have no tools. Answer exactly in the format each request asks for.";
 
-export function claudeArgs(prompt: string, model: string): string[] {
-  // A few turns, not one: if the model reaches for a tool anyway, the refusal costs a turn,
-  // and with only one it would end with error_max_turns instead of an answer.
-  return ["-p", prompt, "--output-format", "json", "--model", model, "--max-turns", "3", "--disallowedTools", NO_TOOLS.join(",")];
+/** The environment Claude runs with: the plan sign-in, never an API key. */
+export function claudeEnv(base: Record<string, string | undefined> = process.env, token = readClaudeToken()): Record<string, string | undefined> {
+  const env = { ...base };
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  if (token && !base.CLAUDE_CODE_OAUTH_TOKEN) env.CLAUDE_CODE_OAUTH_TOKEN = token;
+  return env;
 }
 
-export function claudeThink(claude = process.env.GALAXY_TRAINER_CLAUDE ?? "claude", model = process.env.GALAXY_TRAINER_MODEL ?? "sonnet"): Think {
-  const think: Think = (prompt, timeoutMs) =>
-    new Promise((resolve) => {
-      const env = { ...process.env };
-      // An API key would win over the Max plan login. The trainer only ever uses the plan.
-      delete env.ANTHROPIC_API_KEY;
-      delete env.ANTHROPIC_AUTH_TOKEN;
-      const dir = mkdtempSync(join(tmpdir(), "galaxy-trainer-"));
-      let out = "";
-      let err = "";
-      let timedOut = false;
-      const done = (value: string | null, why = "") => {
-        clearTimeout(timer);
-        rmSync(dir, { recursive: true, force: true });
-        think.lastError = value === null ? why : undefined;
-        if (value === null) console.error(`trainer: Claude Code gave nothing back: ${why}`);
-        resolve(value);
-      };
-      const child = spawn(claude, claudeArgs(prompt, model), { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"] });
-      const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill("SIGINT");
-        setTimeout(() => child.kill("SIGKILL"), 5000).unref?.();
-      }, timeoutMs);
-      child.stdout.on("data", (c: Buffer) => (out += c.toString("utf8")));
-      child.stderr.on("data", (c: Buffer) => (err = (err + c.toString("utf8")).slice(-2000)));
-      child.on("error", (e) => done(null, `couldn't start ${claude} (${e.message}). Is Claude Code installed and on the trainer's PATH?`));
-      child.on("close", (code) => {
-        if (timedOut) return done(null, `it took longer than ${Math.round(timeoutMs / 1000)}s`);
-        try {
-          const event = JSON.parse(out.trim().split("\n").at(-1) ?? "");
-          if (event.is_error || typeof event.result !== "string" || !event.result.trim()) {
-            return done(null, `Claude Code said: ${String(event.result || event.subtype || "an error").slice(0, 300)}`);
-          }
-          done(event.result);
-        } catch {
-          done(null, (err.trim().split("\n").slice(-3).join(" ") || `exit code ${code}`).slice(0, 300));
+export function sdkOptions(model: string, cwd: string, abort: AbortController): Options {
+  return {
+    model,
+    cwd,
+    abortController: abort,
+    // A few turns, not one: if the model reaches for a tool anyway, the refusal costs a turn.
+    maxTurns: 3,
+    tools: [],
+    mcpServers: {},
+    strictMcpConfig: true,
+    settingSources: [],
+    persistSession: false,
+    systemPrompt: SYSTEM,
+    env: claudeEnv(),
+    hooks: {
+      PreToolUse: [
+        { hooks: [async () => ({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: DENY } })] },
+      ],
+    },
+    canUseTool: async () => ({ behavior: "deny", message: DENY }),
+  };
+}
+
+/** Plain-language reasons for the ways the sign-in goes wrong. */
+export function explain(error: string): string {
+  if (/oauth|token.*(expired|invalid)|not logged in|log ?in|authenticat|401|credential/i.test(error)) {
+    return `Claude isn't signed in for the trainer (${error.slice(0, 160)}). Run \`galaxy login\` in Terminal.`;
+  }
+  return error.slice(0, 300);
+}
+
+export function claudeThink(model = process.env.GALAXY_TRAINER_MODEL ?? "sonnet"): Think {
+  const think: Think = async (prompt, timeoutMs) => {
+    const dir = mkdtempSync(join(tmpdir(), "galaxy-trainer-"));
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), timeoutMs);
+    let result: string | null = null;
+    let error = "";
+    const said: string[] = [];
+    try {
+      for await (const message of query({ prompt, options: sdkOptions(model, dir, abort) })) {
+        if (message.type === "assistant") {
+          for (const block of message.message.content ?? []) if (block.type === "text" && typeof block.text === "string") said.push(block.text);
         }
-      });
-    });
+        if (message.type === "result") {
+          if (message.subtype === "success" && typeof message.result === "string" && message.result.trim()) result = message.result;
+          else error = `Claude Code said: ${(message as any).result || message.subtype}`;
+        }
+      }
+    } catch (e) {
+      error = abort.signal.aborted ? `it took longer than ${Math.round(timeoutMs / 1000)}s` : e instanceof Error ? e.message : String(e);
+    } finally {
+      clearTimeout(timer);
+      rmSync(dir, { recursive: true, force: true });
+    }
+    // Out of turns but it did write something: that's still the answer.
+    if (!result && said.length) result = said.join("\n");
+    think.lastError = result ? undefined : explain(error || "no answer");
+    if (!result) console.error(`trainer: Claude gave nothing back: ${think.lastError}`);
+    return result;
+  };
   return think;
 }
 

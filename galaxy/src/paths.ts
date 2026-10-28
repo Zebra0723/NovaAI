@@ -28,7 +28,24 @@ export const paths = {
   get log() {
     return join(galaxyHome(), "galaxyd.log");
   },
+  /**
+   * Your Claude sign-in for the members that run in the background (the trainer, Zenith):
+   * a year-long token from `claude setup-token`, saved by `galaxy login`. The same kind
+   * of sign-in Comet uses, so they don't depend on Terminal's login. Readable by you alone.
+   */
+  get claudeToken() {
+    return join(galaxyHome(), "claude-token");
+  },
 };
+
+/** The saved Claude sign-in, if there is one. */
+export function readClaudeToken(): string {
+  try {
+    return readFileSync(paths.claudeToken, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
 
 export function ensureHome() {
   mkdirSync(galaxyHome(), { recursive: true, mode: 0o700 });

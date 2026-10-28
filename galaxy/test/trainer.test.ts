@@ -4,7 +4,7 @@ import { PresenceReader } from "../src/presence";
 import { handle } from "../src/server";
 import { Store } from "../src/store";
 import { Coach } from "../src/trainer/coach";
-import { claudeArgs, readJSON } from "../src/trainer/think";
+import { claudeEnv, explain, readJSON, sdkOptions } from "../src/trainer/think";
 
 let store: Store;
 let link: Link;
@@ -346,13 +346,13 @@ describe("keeping training honest", () => {
 });
 
 describe("thinking", () => {
-  test("Claude Code gets no tools and one turn", () => {
-    const args = claudeArgs("hi", "sonnet");
-    expect(args).toContain("--max-turns");
-    expect(args[args.indexOf("--max-turns") + 1]).toBe("3");
-    expect(args[args.indexOf("--disallowedTools") + 1]).toContain("Bash");
-    expect(args).not.toContain("--settings");
-    expect(args).not.toContain("--dangerously-skip-permissions");
+  test("Claude gets no tools, no settings, a few turns, and the plan sign-in, never an API key", () => {
+    const o = sdkOptions("sonnet", "/tmp/x", new AbortController());
+    expect(o).toMatchObject({ tools: [], mcpServers: {}, strictMcpConfig: true, settingSources: [], persistSession: false, maxTurns: 3 });
+    const env = claudeEnv({ ANTHROPIC_API_KEY: "sk-ant-api-x", PATH: "/bin" }, "sk-ant-oat-y");
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("sk-ant-oat-y");
+    expect(explain("OAuth token has expired")).toContain("galaxy login");
   });
   test("JSON is read through code fences and prose", () => {
     expect(readJSON('Sure!\n```json\n{"a": 1}\n```')).toEqual({ a: 1 });
