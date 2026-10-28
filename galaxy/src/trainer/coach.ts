@@ -87,8 +87,9 @@ export class Coach {
     return this.o.call("POST", `/v1/training/${member}/thread`, { kind, text, ...extra });
   }
 
+  /** One retry: a single hiccup from Claude Code shouldn't cost a drill or end a session early. */
   private async think(prompt: string, ms: number): Promise<string | null> {
-    return this.o.think(prompt, Math.max(30_000, ms));
+    return (await this.o.think(prompt, Math.max(30_000, ms))) ?? (await this.o.think(prompt, Math.max(30_000, ms)));
   }
 
   /** Whether the member is in the middle of real work. Training never runs over it. */

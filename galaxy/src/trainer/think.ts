@@ -15,7 +15,9 @@ const NO_TOOLS = [
 ];
 
 export function claudeArgs(prompt: string, model: string): string[] {
-  return ["-p", prompt, "--output-format", "json", "--model", model, "--max-turns", "1", "--disallowedTools", NO_TOOLS.join(",")];
+  // A few turns, not one: if the model reaches for a tool anyway, the refusal costs a turn,
+  // and with only one it would end with error_max_turns instead of an answer.
+  return ["-p", prompt, "--output-format", "json", "--model", model, "--max-turns", "3", "--disallowedTools", NO_TOOLS.join(",")];
 }
 
 export function claudeThink(claude = process.env.GALAXY_TRAINER_CLAUDE ?? "claude", model = process.env.GALAXY_TRAINER_MODEL ?? "sonnet"): Think {

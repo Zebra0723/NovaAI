@@ -349,7 +349,7 @@ describe("thinking", () => {
   test("Claude Code gets no tools and one turn", () => {
     const args = claudeArgs("hi", "sonnet");
     expect(args).toContain("--max-turns");
-    expect(args[args.indexOf("--max-turns") + 1]).toBe("1");
+    expect(args[args.indexOf("--max-turns") + 1]).toBe("3");
     expect(args[args.indexOf("--disallowedTools") + 1]).toContain("Bash");
     expect(args).not.toContain("--settings");
     expect(args).not.toContain("--dangerously-skip-permissions");
