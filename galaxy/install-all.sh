@@ -44,11 +44,15 @@ checkout() {
     dir="$HOME_DIR/$name"
     git clone -q "https://github.com/Zebra0723/$name" "$dir" >&2 || return 1
   fi
-  if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
-    warn "$name has changes of your own in $dir; leaving its files as they are" >&2
-  else
-    git -C "$dir" fetch -q origin "$branch" >&2 && git -C "$dir" checkout -q "$branch" >&2 && git -C "$dir" pull -q origin "$branch" >&2 || return 1
+  # Changes of your own come along: they're set aside, the update goes in, and they go back on top.
+  git -C "$dir" fetch -q origin "$branch" >&2 || return 1
+  if ! git -C "$dir" checkout -q "$branch" >&2 2>/dev/null; then
+    git -C "$dir" stash push -q -m "galaxy install-all $(date +%s)" >&2 &&
+      git -C "$dir" checkout -q "$branch" >&2 &&
+      git -C "$dir" stash pop -q >&2 || { warn "$name: couldn't switch to $branch in $dir" >&2; return 1; }
   fi
+  git -C "$dir" -c rebase.autoStash=true pull -q --rebase origin "$branch" >&2 ||
+    { warn "$name: couldn't update $dir (changes of your own clash with the update)" >&2; return 1; }
   printf '%s\n' "$dir"
 }
 

@@ -16,7 +16,8 @@ const HELP = `galaxy - Galaxy Link from Terminal
   galaxy activity            what the bodies have been doing today
   galaxy tasks               recent handoffs between bodies
   galaxy context <body>      the prompt block a body sees
-  galaxy import              merge Nova's and Orbit's own memories in (safe to rerun)`;
+  galaxy import              merge Nova's and Orbit's own memories in (safe to rerun)
+  galaxy doctor              why a member hasn't joined, and what to do about it`;
 
 async function need<T>(value: Promise<T | null>): Promise<T> {
   const result = await value;
@@ -103,6 +104,46 @@ switch (command) {
       const r = await need(link.call<{ found: number; added: number }>("POST", "/v1/memory/import", { items }));
       console.log(`  ${name}: ${r.added} new of ${r.found}`);
     }
+    break;
+  }
+  case "doctor": {
+    // Why a member hasn't joined: checks each one's install from the outside.
+    const { spawnSync } = await import("node:child_process");
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { homedir } = await import("node:os");
+    const sh = (cmd: string) => spawnSync("/bin/bash", ["-c", cmd], { encoding: "utf8" }).stdout.trim();
+    const home = homedir();
+    const up = await link.available();
+    console.log(`${up ? "✓" : "✗"} Galaxy Link ${up ? "is running" : "isn't running: launchctl kickstart gui/$(id -u)/ai.galaxy.link"}`);
+    const bodies = up ? ((await link.call<any[]>("GET", "/v1/bodies")) ?? []) : [];
+    const joined = (id: string) => bodies.find((b) => b.id === id);
+    const report = (id: string, lines: string[]) => {
+      const b = joined(id);
+      console.log(`\n${b?.online ? "✓" : b ? "○" : "✗"} ${id.charAt(0).toUpperCase() + id.slice(1)}: ${b?.online ? "connected" : b ? "joined before, not running now" : "has never joined"}`);
+      if (!b?.online) for (const l of lines) console.log("    " + l);
+    };
+    // Comet: where launchd runs it from, and whether that copy knows about Link.
+    const plist = `${home}/Library/LaunchAgents/com.imessage.server.plist`;
+    const cometDir = existsSync(plist) ? sh(`/usr/libexec/PlistBuddy -c 'Print :WorkingDirectory' '${plist}'`) : "";
+    const cometRoot = cometDir ? sh(`git -C '${cometDir}' rev-parse --show-toplevel 2>/dev/null`) : "";
+    const cometLines: string[] = [];
+    if (!cometRoot) cometLines.push("Comet's server isn't installed as a login agent (com.imessage.server).");
+    else {
+      cometLines.push(`runs from ${cometRoot}, branch ${sh(`git -C '${cometRoot}' branch --show-current`) || "?"}`);
+      if (!existsSync(`${cometRoot}/server/src/galaxy/client.ts`))
+        cometLines.push("that copy predates Galaxy Link: run galaxy/install-all.sh again (it updates this exact folder)");
+      const env = existsSync(`${cometRoot}/.env`) ? readFileSync(`${cometRoot}/.env`, "utf8") : "";
+      if (/^\s*GALAXY_LINK\s*=\s*(0|off|false|no)\b/im.test(env)) cometLines.push("GALAXY_LINK is switched off in its .env");
+      const running = sh("launchctl list | grep com.imessage.server");
+      cometLines.push(running ? "its server is loaded; restart it: launchctl kickstart -k gui/$(id -u)/com.imessage.server" : "its server isn't running: launchctl kickstart gui/$(id -u)/com.imessage.server");
+      const logLine = sh(`grep -rih "galaxy link" '${cometRoot}/logs' 2>/dev/null | tail -1`);
+      if (logLine) cometLines.push(`last log: ${logLine.slice(0, 160)}`);
+    }
+    report("comet", cometLines);
+    report("nova", ["open Nova (it joins while it's running)", existsSync("/Applications/Nova.app") ? "" : "Nova.app isn't in Applications: run galaxy/install-all.sh"].filter(Boolean));
+    report("orbit", ["Orbit joins while its menu bar app is running, and is usually quit; that's fine"]);
+    report("nebula", ["open Nebula (it joins while it's running)"]);
+    report("zenith", [sh("launchctl list | grep ai.galaxy.zenith") ? "loaded; check ~/Galaxy/Missions/zenith.log" : "not installed: run galaxy/install-all.sh"]);
     break;
   }
   case "help":
