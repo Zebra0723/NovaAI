@@ -45,3 +45,19 @@ This starts a throwaway Galaxy full of activity on port 7741, separate from your
 ```bash
 bun test
 ```
+
+## Comet running as its own Mac user
+
+If Comet runs as a separate Mac user (walled off from your files), `install-all.sh`
+leaves it alone. Update it as that user, and give it a copy of Link's token once:
+
+```
+U=cometai-by-dailyos; C=/Users/$U/Available3
+sudo -u $U -H git -C $C pull --ff-only origin claude/nice-knuth-5l429p
+sudo -u $U -H bash -c "cd $C && bun install --silent"
+sudo pkill -u $U -f "Available3/(server|relay)/src/index.ts"   # launchd starts them again
+
+D="/Users/$U/Library/Application Support/Galaxy"               # once
+sudo mkdir -p "$D" && sudo cp ~/Library/Application\ Support/Galaxy/token "$D"/
+sudo chown -R $U "$D" && sudo chmod 700 "$D"
+```

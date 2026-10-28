@@ -69,6 +69,12 @@ say "Nova"
 step "Nova app" "$HERE/scripts/build-app.sh" --install
 
 say "Comet"
+# Comet may run as its own Mac user, walled off from yours. Then it's updated as that
+# user (see galaxy/README.md), never from here: a second copy as you would fight it for its port.
+COMET_USER="$(ps -axo user=,command= | awk '/\/server\/src\/index\.ts/ && !/awk/ {print $1; exit}')"
+if [ -n "$COMET_USER" ] && [ "$COMET_USER" != "$(id -un)" ]; then
+  ok "Comet runs as its own user ($COMET_USER); leaving it to that user"
+else
 # The Comet that's actually running, if launchd knows where it is.
 LIVE_COMET="$(/usr/libexec/PlistBuddy -c 'Print :WorkingDirectory' "$HOME/Library/LaunchAgents/com.imessage.server.plist" 2>/dev/null || true)"
 if COMET="$(checkout CometAI claude/nice-knuth-5l429p "$LIVE_COMET")"; then
@@ -84,6 +90,7 @@ if COMET="$(checkout CometAI claude/nice-knuth-5l429p "$LIVE_COMET")"; then
   fi
 else
   warn "couldn't get CometAI"; FAILED+=("Comet")
+fi
 fi
 
 say "Nebula"
