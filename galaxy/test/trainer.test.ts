@@ -341,12 +341,14 @@ describe("keeping training honest", () => {
     expect(o.members.find((m) => m.member === "comet")!.latest).toMatchObject({ id: s.id, status: "failed" });
   });
 
-  test("you can reset training, and test sessions don't use up the night", async () => {
+  test("you can reset training, and a session you asked for counts like any other", async () => {
     link.hello("comet", {});
     link.hello("trainer", {});
     const t = link.training.startSession("trainer", "comet", "2026-10-28", "test");
-    link.training.finishSession("trainer", t.id, { drills: 1, score: 50 });
-    expect(link.training.minutesOn("comet", "2026-10-28")).toBe(0);
+    store.now = ((start) => () => start + 12 * 60_000)(store.now());
+    link.training.finishSession("trainer", t.id, { drills: 5, score: 70 });
+    expect(link.training.minutesOn("comet", "2026-10-28")).toBe(12);
+    expect(link.training.overview("2026-10-28").members.find((m) => m.member === "comet")!.scores).toEqual([{ day: "2026-10-28", score: 70 }]);
     expect(await as("comet")("DELETE", "/v1/training")).toBeNull();
     expect(await as("you")("DELETE", "/v1/training")).not.toBeNull();
     expect(link.training.sessions("comet")).toHaveLength(0);

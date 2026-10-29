@@ -367,9 +367,9 @@ export class Training {
     return this.session(id)!;
   }
 
-  /** Minutes of overnight training a member has had on `day` (sessions you asked for don't count). */
-  minutesOn(member: BodyID, day: string, trigger = "night"): number {
-    const rows = this.db.query("select started_at, ended_at from training_sessions where member = ? and day = ? and trigger = ?").all(member, day, trigger) as any[];
+  /** Minutes of training a member has had on `day`. Sessions you asked for count like any other. */
+  minutesOn(member: BodyID, day: string): number {
+    const rows = this.db.query("select started_at, ended_at from training_sessions where member = ? and day = ?").all(member, day) as any[];
     const ms = rows.reduce((sum, r) => sum + ((r.ended_at || this.now()) - r.started_at), 0);
     return Math.round(ms / 60_000);
   }
@@ -638,7 +638,6 @@ export class Training {
           practises: !!this.store.body(member)?.powers.includes(member === "nebula" ? "gesture_training" : "practice"),
           budget: budgetFor(member),
           minutesToday: this.minutesOn(member, day),
-          testedToday: this.minutesOn(member, day, "test"),
           lessons: this.lessons(member).length,
           programVersion: program?.version ?? 0,
           focus: program?.plan.focus.slice(0, 3) ?? [],

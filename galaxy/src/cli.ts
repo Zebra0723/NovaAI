@@ -19,7 +19,7 @@ const HELP = `galaxy - Galaxy Link from Terminal
   galaxy import              merge Nova's and Orbit's own memories in (safe to rerun)
   galaxy medic               how every member is, as Galaxy Medic sees it (--now for a fresh checkup)
   galaxy login               sign the background members (Trainer, Zenith) in to Claude, like Comet
-  galaxy train <member>      a 12-minute test session with Galaxy Trainer, now
+  galaxy train <member>      a full 12-minute Galaxy Trainer session, now
   galaxy trainer reset       wipe all training and start every member from its brief
   galaxy introduce           a round of introductions in Galaxy Chat, so every member knows the others
   galaxy doctor              why a member hasn't joined, and what to do about it`;
@@ -178,7 +178,7 @@ switch (command) {
     const member = args[0];
     if (!member) throw new Error("galaxy train <comet|orbit|nova|nebula|zenith>");
     const r = await need(link.call<{ trainerOnline: boolean }>("POST", `/v1/training/${member}/train`, {}));
-    console.log(r.trainerOnline ? `Starting a 12-minute test session for ${member}. Watch it in Galaxy Trainer.` : "Queued, but the trainer isn't running: launchctl kickstart gui/$(id -u)/ai.galaxy.trainer");
+    console.log(r.trainerOnline ? `Starting a 12-minute session for ${member}. Watch it in Galaxy Trainer.` : "Queued, but the trainer isn't running: launchctl kickstart gui/$(id -u)/ai.galaxy.trainer");
     break;
   }
   case "trainer": {

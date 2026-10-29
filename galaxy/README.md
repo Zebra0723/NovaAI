@@ -70,8 +70,9 @@ it can: twelve minutes each, twenty-four for Nebula.
 - **When:** only inside the overnight window (`GALAXY_TRAINER_WINDOW`, default `1-6`: 1am to 6am), one
   member at a time, and **never over real work**: a member doing a task isn't started, and if one picks
   up a task mid-session the drills stop there.
-- **Test sessions:** *Test session · 12 min* on a member's training page, or `galaxy train <member>`,
-  runs a twelve-minute session straight away. It doesn't use up that member's night.
+- **Sessions on demand:** *Train now · 12 min* on a member's training page, or `galaxy train <member>`,
+  runs a full twelve-minute session straight away. It counts like any other: its minutes, its score,
+  its program changes and its lessons.
 - **A session** (`src/trainer/coach.ts`): the trainer reads what the member really did that day, your
   notes, and where it scored worst, then designs new drills aimed at those weak spots (never the same
   drill twice). Most are **simulations**: a real situation played out over several turns, with the

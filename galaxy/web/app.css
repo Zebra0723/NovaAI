@@ -794,7 +794,6 @@ kbd { font: 400 11px var(--mono); padding: 1px 6px; border-radius: 5px; border: 
 .world-k svg { width: 12px; height: 12px; }
 .world-k time { margin-left: auto; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
 .world-card p { margin-top: 6px; }
-.test-tag { margin-left: 6px; font: 500 9.5px var(--mono); font-style: normal; text-transform: uppercase; letter-spacing: .08em; color: var(--trainer); background: color-mix(in srgb, var(--trainer) 8%, #fff); padding: 2px 6px; border-radius: 6px; vertical-align: 1px; }
 
 /* Nebula's workout results. */
 .tm.results { margin: 16px 0; }

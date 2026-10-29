@@ -112,7 +112,7 @@ export class Coach {
       if (member === "nebula" && learnt.me?.powers?.includes("gesture_training")) {
         await this.nebulaWorkout(ctx, learnt);
       } else {
-        await this.drillSession(ctx, learnt, opts.trigger === "test");
+        await this.drillSession(ctx, learnt);
       }
       return await this.wrap(ctx, learnt);
     } catch (error) {
@@ -159,11 +159,11 @@ export class Coach {
 
   // ------------------------------------------------------------- drill days
 
-  private async drillSession(ctx: Ctx, l: Learnt, test: boolean) {
+  private async drillSession(ctx: Ctx, l: Learnt) {
     const { member, sid } = ctx;
     const practises = !!l.me?.powers?.includes("practice") && member !== "orbit";
     const planned = readJSON<{ observations?: string[]; focus?: string[]; rubric?: string[]; newScenarios?: TrainingPlan["scenarios"]; drills?: Drill[]; opening?: string }>(
-      await this.think(planPrompt(member, l, test), THINK_MS),
+      await this.think(planPrompt(member, l), THINK_MS),
     );
     if (!planned) await this.say(member, "message", `I couldn't plan tonight's drills (${this.o.think.lastError ?? "no answer"}), so we're working from the scenario bank.`, { sessionId: sid });
     const plan: TrainingPlan = {
@@ -442,9 +442,9 @@ function simText(drill: Drill, transcript: Turn[], turn: number, turns: number) 
 ${transcript.map((t) => (t.who === "world" ? `[What happens]\n${t.text}` : `[You]\n${t.text}`)).join("\n\n")}`;
 }
 
-function planPrompt(member: string, l: Learnt, test: boolean): string {
+function planPrompt(member: string, l: Learnt): string {
   const name = nameOf(member);
-  return `You are Galaxy Trainer, the coach of GalaxyAI, a personal assistant made of several members. You train ${name} to do what it does in the most reliable, result-yielding way possible. ${test ? "This is a short test session the human asked for." : "This is tonight's session, while the human sleeps."}
+  return `You are Galaxy Trainer, the coach of GalaxyAI, a personal assistant made of several members. You train ${name} to do what it does in the most reliable, result-yielding way possible. This is today's session: a full one, and it counts like any other.
 
 The brief ${name}'s training started from:
 ${l.program.brief}
@@ -483,7 +483,7 @@ Design tonight:
 1. Learn: what today's real work and its weak spots say about where ${name} slips.
 2. Refine the focus and rubric if needed.
 3. Add 1 to 3 new scenarios to the bank, built from real work, harder where it's been scoring well.
-4. Drills: ${test ? "3 or 4" : "4 to 6"}, every one new and different from all the past ones. At least half are SIMULATIONS: an advanced, realistic situation that plays out over 2 to 4 turns, where you play the other side (the person texting, the Mac's screen and apps, a website, a teammate) with a persona, hidden facts (world) the member only discovers by acting well, and twists (a reply that changes the ask, an error dialog, a missing file, an ambiguous name, a deadline, a stranger, a site that's down). Use exact, realistic detail: real-looking messages, file names, paths, error text, numbers. Target the weak spots hardest; repeat a weakness in a new form rather than repeating a drill. Single drills are for quick judgement calls.
+4. Drills: 4 to 6, every one new and different from all the past ones. At least half are SIMULATIONS: an advanced, realistic situation that plays out over 2 to 4 turns, where you play the other side (the person texting, the Mac's screen and apps, a website, a teammate) with a persona, hidden facts (world) the member only discovers by acting well, and twists (a reply that changes the ask, an error dialog, a missing file, an ambiguous name, a deadline, a stranger, a site that's down). Use exact, realistic detail: real-looking messages, file names, paths, error text, numbers. Target the weak spots hardest; repeat a weakness in a new form rather than repeating a drill. Single drills are for quick judgement calls.
 
 Practice is always a dry run: ${name} answers with what it would do, and never does it.
 

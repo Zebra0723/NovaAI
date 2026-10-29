@@ -15,16 +15,13 @@ const TEST = () => state.training?.testMinutes ?? 12;
 /** The session running now, if any. */
 const live = (id) => (memberOf(id)?.latest?.status === "running" ? memberOf(id).latest : null);
 /** Minutes to show: the running session's, counting up live; otherwise last night's. */
-/** Showing today's test session: one is running, or one ran today and there's been no overnight one. */
-const showingTest = (id) => {
-  const m = memberOf(id);
-  return live(id)?.trigger === "test" || (!live(id) && !m?.minutesToday && (m?.testedToday ?? 0) > 0);
-};
+/** A session you asked for is running: it's twelve minutes, whatever the member's overnight length. */
+const showingTest = (id) => live(id)?.trigger === "test";
 const shownMinutes = (id) => {
   const s = live(id);
   if (s) return Math.min(shownBudget(id), Math.max(0, Math.floor((Date.now() - s.startedAt) / 60_000)));
   const m = memberOf(id);
-  return Math.min(shownBudget(id), showingTest(id) ? m?.testedToday ?? 0 : m?.minutesToday ?? 0);
+  return Math.min(shownBudget(id), m?.minutesToday ?? 0);
 };
 /** Out of: twelve for a test session, else the member's overnight minutes. */
 const shownBudget = (id) => (showingTest(id) ? TEST() : BUDGET(id));
@@ -115,8 +112,8 @@ function delta(scores) {
 function statusLine(m) {
   if (!m?.joined) return `<span class="st"><span class="lamp never"></span>Hasn't joined Galaxy yet</span>`;
   if (running(m)) return `<span class="st live"><span class="lamp on live"></span>Training now</span>`;
-  if (m.latest?.trigger === "night" && m.latest.day === state.training?.day && m.latest.status !== "running")
-    return `<span class="st"><span class="lamp on" style="--c:var(--good)"></span>Trained last night</span>`;
+  if (m.latest && m.latest.day === state.training?.day && m.latest.status === "done")
+    return `<span class="st"><span class="lamp on" style="--c:var(--good)"></span>Trained today</span>`;
   return `<span class="st"><span class="lamp"></span>${trainerOnline() ? `Tonight from ${esc(hour(state.training?.window?.start ?? 1))}` : "Waiting for the trainer"}</span>`;
 }
 
@@ -171,7 +168,7 @@ const trainer = {
     focusTraining("");
     const t = state.training;
     const all = TRAINEES.map(memberOf).filter(Boolean);
-    const total = all.reduce((s, m) => s + (live(m.member)?.trigger === "test" ? m.minutesToday : shownMinutes(m.member)), 0);
+    const total = all.reduce((s, m) => s + Math.min(BUDGET(m.member), Math.max(m.minutesToday, shownMinutes(m.member))), 0);
     const nightly = TRAINEES.reduce((s, id) => s + BUDGET(id), 0);
     const now = all.find(running);
     const feed = latestFromSessions();
@@ -219,7 +216,7 @@ const trainer = {
               </a>`,
                   )
                   .join("")
-              : `<div class="empty"><b>No sessions yet</b>The first ones run tonight${trainerOnline() ? "" : ", once the trainer is running"}. To see one now, open a member and press Test session.</div>`
+              : `<div class="empty"><b>No sessions yet</b>The first ones run tonight${trainerOnline() ? "" : ", once the trainer is running"}. To see one now, open a member and press Train now.</div>`
           }</div>
         </div>
         <div>
@@ -340,7 +337,7 @@ function asideHTML(id) {
       ? `<div class="history-chart">${scoreChart(id, scores, { w: 320, h: 96, axis: true })}</div>
         <ul class="sessions">${sessions
           .map(
-            (s) => `<li><div><b>${esc(dayLabel(s.startedAt))}${s.trigger === "test" ? ` <em class="test-tag">Test</em>` : ""}</b><span>${s.status === "running" ? "In progress" : `${s.drills} drill${s.drills === 1 ? "" : "s"} · ${Math.max(1, Math.round(((s.endedAt || Date.now()) - s.startedAt) / 60000))} min`}</span>${s.summary ? `<p>${esc(s.summary)}</p>` : ""}</div>
+            (s) => `<li><div><b>${esc(dayLabel(s.startedAt))}</b><span>${s.status === "running" ? "In progress" : `${s.drills} drill${s.drills === 1 ? "" : "s"} · ${Math.max(1, Math.round(((s.endedAt || Date.now()) - s.startedAt) / 60000))} min`}</span>${s.summary ? `<p>${esc(s.summary)}</p>` : ""}</div>
             ${s.status === "running" ? `<span class="score-pill live">Live</span>` : s.score !== null ? `<span class="score-pill ${scoreTone(s.score)}">${pct(s.score)}</span>` : `<span class="score-pill">${s.status === "failed" ? "—" : ""}</span>`}</li>`,
           )
           .join("")}</ul>`
@@ -392,9 +389,9 @@ function headHTML(id) {
         <div class="pills">${statusLine(m)}<span class="pill">${id === "nebula" ? (m?.practises ? "Trains on its own simulator" : "Rehearsed until its simulator joins in") : m?.practises ? "Answers its own drills" : "Drills are rehearsed by the trainer"}</span>${d?.program ? `<span class="pill">Program v${d.program.version}</span>` : ""}</div>
       </div>
       <div class="now today-card">
-        <div class="label">${showingTest(id) ? (live(id) ? "Test session" : "Tested today") : "Overnight"}</div>
+        <div class="label">Today</div>
         <div class="today">${ring(id, 64, 6)}<div><b>${shownMinutes(id)}<i> of ${shownBudget(id)} min</i></b><span>${running(m) ? "Session in progress" : lastNight ? `Last night: ${lastNight.score !== null ? `${pct(lastNight.score)}/100` : lastNight.status === "failed" ? "didn't finish" : "done"}` : `Every night, ${esc(windowText())}`}</span></div></div>
-        <button class="btn primary" id="train-now" title="A ${TEST()}-minute session now, for testing. It never runs over real work." ${running(m) || !m?.joined ? "disabled" : ""}>${icon("play")}${running(m) ? "Training now" : `Test session · ${TEST()} min`}</button>
+        <button class="btn primary" id="train-now" title="A full ${TEST()}-minute session now. It counts like any other, and never runs over real work." ${running(m) || !m?.joined ? "disabled" : ""}>${icon("play")}${running(m) ? "Training now" : `Train now · ${TEST()} min`}</button>
       </div>
     </section>
     <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr))">
