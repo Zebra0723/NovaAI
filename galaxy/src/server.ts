@@ -7,6 +7,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, sep } from "node:path";
 import { Link, LinkError } from "./link";
 import { MedicError } from "./medicine";
+import { TeachError } from "./teach";
 import { TrainingError } from "./training";
 
 /** The Galaxy Link app's pages, served at /. */
@@ -45,7 +46,7 @@ export async function handle(link: Link, token: string, req: Request): Promise<R
   try {
     return await route(link, token, req);
   } catch (error) {
-    if (error instanceof LinkError || error instanceof TrainingError || error instanceof MedicError) return json({ error: error.message }, error.status);
+    if (error instanceof LinkError || error instanceof TrainingError || error instanceof MedicError || error instanceof TeachError) return json({ error: error.message }, error.status);
     if (error instanceof SyntaxError) return json({ error: "that isn't JSON" }, 400);
     console.error("galaxyd:", error);
     return json({ error: "something went wrong in Link" }, 500);
@@ -198,6 +199,55 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     if (!link.store.body(who)) throw new LinkError(403, "only bodies of GalaxyAI can talk in Galaxy Chat");
     const { text } = await input();
     return json(link.say(who, "message", String(text ?? "")), 201);
+  }
+
+  // ------------------------------------------------------------------ teach
+  const teach = link.teach;
+  if (path === "/v1/teach" && method === "GET") {
+    await teach.waitForChange(Number(url.searchParams.get("since") ?? 0) || 0, url.searchParams.has("since") ? wait() : 0);
+    return json(teach.overview());
+  }
+  if (path === "/v1/teach/spots" && method === "POST") return json(teach.spot(needBody(), await input()), 202);
+  if (path === "/v1/teach/spots" && method === "GET") return json(await teach.takeSpots(needBody(), wait()));
+  if (path === "/v1/teach/offers" && method === "POST") return json(teach.makeOffer(needBody(), await input()), 201);
+  if (path === "/v1/teach/offers" && method === "GET") {
+    await teach.waitForChange(Number(url.searchParams.get("since") ?? 0) || 0, url.searchParams.has("since") ? wait() : 0);
+    return json({ version: teach.version, offers: teach.pendingOffers() });
+  }
+  const offer = path.match(/^\/v1\/teach\/offers\/([\w-]+)\/(begin|skip)$/);
+  if (offer && method === "POST") return json(offer[2] === "begin" ? teach.begin(needBody(), offer[1]!) : teach.skip(needBody(), offer[1]!));
+  if (path === "/v1/teach/lessons" && method === "POST") return json(teach.ask(needBody(), await input()), 201);
+  if (path === "/v1/teach/context" && method === "GET") return json(teach.context());
+  if (path === "/v1/teach/style" && method === "PUT") return json(teach.setStyle(needBody(), await input()));
+  if (path === "/v1/teach/status" && method === "PUT") return json(teach.setStatus(needBody(), await input()));
+  if (path === "/v1/teach/watcher" && method === "PUT") return json(teach.setWatcher(needBody(), await input()));
+  if (path === "/v1/teach/notes" && method === "POST") return json(teach.addNote(needBody(), await input()), 201);
+  const note = path.match(/^\/v1\/teach\/notes\/([\w-]+)$/);
+  if (note && method === "DELETE") return json(teach.removeNote(needBody(), note[1]!));
+  const topic = path.match(/^\/v1\/teach\/topics\/(.+)$/);
+  if (topic && method === "PATCH") return json(teach.setLevel(needBody(), decodeURIComponent(topic[1]!), (await input()).level));
+  const check = path.match(/^\/v1\/teach\/checks\/([\w-]+)$/);
+  if (check && method === "GET") {
+    const c = await teach.waitCheck(check[1]!, wait());
+    if (!c) throw new TeachError(404, "no such check");
+    return json(c);
+  }
+  if (check && method === "PUT") return json(teach.answerCheck(needBody(), check[1]!, await input()));
+  const tlesson = path.match(/^\/v1\/teach\/lessons\/([\w-]+)(?:\/(content|fail|retry|progress|finish|checks))?$/);
+  if (tlesson) {
+    const [, lid, part] = tlesson as unknown as [string, string, string | undefined];
+    if (!part && method === "GET") {
+      const l = teach.lesson(lid);
+      if (!l) throw new TeachError(404, "no such lesson");
+      return json(l);
+    }
+    if (!part && method === "DELETE") return json(teach.remove(needBody(), lid));
+    if (part === "content" && method === "PUT") return json(teach.write(needBody(), lid, (await input()).content));
+    if (part === "fail" && method === "POST") return json(teach.fail(needBody(), lid, (await input()).reason));
+    if (part === "retry" && method === "POST") return json(teach.retry(needBody(), lid));
+    if (part === "progress" && method === "PUT") return json(teach.progress(needBody(), lid, await input()));
+    if (part === "finish" && method === "POST") return json(teach.finish(needBody(), lid, await input()));
+    if (part === "checks" && method === "POST") return json(teach.askCheck(needBody(), lid, await input()), 201);
   }
 
   // ------------------------------------------------------------------ medic

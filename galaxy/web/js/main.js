@@ -6,8 +6,9 @@ import { $, ago, esc } from "./util.js";
 import { closeDrawer, VIEWS as LINK_VIEWS } from "./views.js";
 import { TRAINEES, TRAINER_VIEWS, traineeRow } from "./trainer.js";
 import { MEDIC_VIEWS } from "./medic.js";
+import { TEACH_VIEWS } from "./teach.js";
 
-const VIEWS = { ...LINK_VIEWS, ...TRAINER_VIEWS, ...MEDIC_VIEWS };
+const VIEWS = { ...LINK_VIEWS, ...TRAINER_VIEWS, ...MEDIC_VIEWS, ...TEACH_VIEWS };
 import { closePalette, openPalette } from "./palette.js";
 
 const NAV = [
@@ -20,12 +21,16 @@ const NAV = [
   ["activity", "Activity"],
   ["system", "System"],
 ];
-const SPACES = [["trainer", "Trainer"], ["medic", "Medic"]];
-const ICON_FOR = { trainer: "trainer", medic: "medic", overview: "overview", chat: "chat", map: "map", handoffs: "handoffs", approvals: "approvals", memory: "memory", activity: "activity", system: "system" };
+const SPACES = [["trainer", "Trainer"], ["medic", "Medic"], ["teach", "Teach"]];
+const ICON_FOR = { trainer: "trainer", medic: "medic", teach: "teach", overview: "overview", chat: "chat", map: "map", handoffs: "handoffs", approvals: "approvals", memory: "memory", activity: "activity", system: "system" };
 
 /** Galaxy Trainer.app opens this same page as ?space=trainer: the Trainer's space on its own. */
 const TRAINER_APP = new URLSearchParams(location.search).get("space") === "trainer";
 if (TRAINER_APP) document.documentElement.classList.add("trainer-app");
+/** Galaxy Teach.app: the same page as ?space=teach, Teach's space on its own. */
+const TEACH_APP = new URLSearchParams(location.search).get("space") === "teach";
+if (TEACH_APP) document.documentElement.classList.add("trainer-app", "teach-app");
+const APP = TRAINER_APP ? "Galaxy Trainer" : TEACH_APP ? "Galaxy Teach" : "Galaxy Link";
 
 const LINK_SIDEBAR = `
       <div class="brand">${brandMark()}<div><div class="brand-name">Galaxy Link</div><div class="brand-sub">GalaxyAI · hub</div></div></div>
@@ -46,10 +51,16 @@ const TRAINER_SIDEBAR = `
       <div class="nav-label"><span>Trainees</span><span id="roster-count"></span></div>
       <div class="roster trainee-roster" id="roster"></div>`;
 
+const TEACH_SIDEBAR = `
+      <div class="brand">${avatar("teach", "brand-avatar")}<div><div class="brand-name">Galaxy Teach</div><div class="brand-sub">GalaxyAI · tutor</div></div></div>
+      <nav class="nav" id="nav"><a href="#/teach" data-nav="teach">${icon("book")}<span>Lessons</span><span class="count live-count" hidden></span></a></nav>
+      <div class="nav-label"><span>Lately</span></div>
+      <div class="roster teach-roster" id="roster"></div>`;
+
 document.body.innerHTML = `
   <div class="backdrop"></div>
   <div class="shell">
-    <aside class="sidebar">${TRAINER_APP ? TRAINER_SIDEBAR : LINK_SIDEBAR}
+    <aside class="sidebar">${TRAINER_APP ? TRAINER_SIDEBAR : TEACH_APP ? TEACH_SIDEBAR : LINK_SIDEBAR}
       <div class="sidebar-foot"><div class="presence" id="presence"></div></div>
     </aside>
     <main class="main">
@@ -67,8 +78,10 @@ setInterval(() => {
 
 /** "#/chat" is the chat page; "#/member/nova" is Nova's own page. */
 function currentRoute() {
-  const [id, param = ""] = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
+  const [id, param = "", sub = ""] = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
   if (id === "trainer" && param) return ["training", param];
+  if (id === "teach" && param === "lesson" && sub) return ["lesson", sub];
+  if (TEACH_APP) return ["teach", ""];
   if (TRAINER_APP) return ["trainer", ""];
   return VIEWS[id] ? [id, param] : ["overview", ""];
 }
@@ -85,15 +98,21 @@ function show() {
   box.innerHTML = view.render(param);
   box.scrollTop = 0;
   view.mount?.(box);
-  document.title = `${id === "member" || id === "training" ? param.charAt(0).toUpperCase() + param.slice(1) : view.title} · ${TRAINER_APP ? "Galaxy Trainer" : "Galaxy Link"}`;
-  for (const a of document.querySelectorAll("[data-nav]")) a.classList.toggle("on", a.dataset.nav === (id === "training" ? "trainer" : id));
+  document.title = `${id === "member" || id === "training" ? param.charAt(0).toUpperCase() + param.slice(1) : view.title} · ${APP}`;
+  for (const a of document.querySelectorAll("[data-nav]")) a.classList.toggle("on", a.dataset.nav === (id === "training" ? "trainer" : id === "lesson" ? "teach" : id));
   for (const a of document.querySelectorAll(".roster .who")) a.classList.toggle("on", id === "member" && a.dataset.body === param);
   drawCrumb();
 }
 
-const CRUMB = { overview: "Overview", chat: "Galaxy Chat", map: "Galaxy Map", handoffs: "Handoffs", approvals: "Approvals", memory: "Memory", activity: "Activity", system: "System", trainer: "Trainer", medic: "Medic" };
+const CRUMB = { overview: "Overview", chat: "Galaxy Chat", map: "Galaxy Map", handoffs: "Handoffs", approvals: "Approvals", memory: "Memory", activity: "Activity", system: "System", trainer: "Trainer", medic: "Medic", teach: "Teach" };
 function drawCrumb() {
   const name = esc(param.charAt(0).toUpperCase() + param.slice(1));
+  if (current === "lesson" || (TEACH_APP && current === "teach")) {
+    const title = current === "lesson" ? esc(state.teach?.lessons?.find((l) => l.id === param)?.title ?? "Lesson") : "";
+    const root = TEACH_APP ? `<a href="#/teach">Galaxy Teach</a>` : `<span>Galaxy Link</span><span class="sep">/</span><a href="#/teach">Teach</a>`;
+    $("#crumb").innerHTML = current === "lesson" ? `${root}<span class="sep">/</span><b>${title}</b>` : `<span>Galaxy Teach</span><span class="sep">/</span><b>Lessons</b>`;
+    return;
+  }
   if (TRAINER_APP) {
     $("#crumb").innerHTML =
       current === "training"
@@ -116,7 +135,7 @@ function chrome() {
     badge.textContent = pending;
   }
 
-  const bodies = (o?.bodies ?? []).filter((b) => b.id !== "trainer" && b.id !== "medic");
+  const bodies = (o?.bodies ?? []).filter((b) => b.id !== "trainer" && b.id !== "medic" && b.id !== "teach");
   const sick = (state.medic?.checkup?.members ?? []).filter((m) => m.health === "needs_you").length;
   const medicBadge = $('[data-nav="medic"] .count');
   if (medicBadge) {
@@ -129,8 +148,21 @@ function chrome() {
     liveBadge.hidden = !live;
     liveBadge.textContent = live ? "Live" : "";
   }
+  const offers = state.teach?.offers?.length ?? 0;
+  const teachBadge = $('[data-nav="teach"] .count');
+  if (teachBadge) {
+    teachBadge.hidden = !offers;
+    teachBadge.textContent = offers ? `${offers} new` : "";
+  }
   const order = ["comet", "orbit", "nova", "nebula", "zenith"];
-  if (TRAINER_APP) {
+  if (TEACH_APP) {
+    const recent = (state.teach?.lessons ?? []).filter((l) => l.status !== "failed").slice(0, 8);
+    $("#roster").innerHTML = recent.length
+      ? recent
+          .map((l) => `<a class="who${current === "lesson" && param === l.id ? " on" : ""}" href="#/teach/lesson/${l.id}" data-body="teach"><span class="nm">${esc(l.title.replace(/`/g, ""))}</span><span class="state">${l.status === "done" ? `${l.score ?? "—"}` : l.status === "writing" ? "writing" : l.position ? "going" : "new"}</span></a>`)
+          .join("")
+      : `<div class="muted small" style="padding:6px 12px">Your lessons show up here.</div>`;
+  } else if (TRAINER_APP) {
     $("#roster").innerHTML = TRAINEES.map((id) => traineeRow(id, current === "training" && param === id)).join("");
     const done = (state.training?.members ?? []).filter((m) => m.minutesToday >= (state.training?.minutesPerDay ?? 12) - 1).length;
     $("#roster-count").textContent = state.training ? `${done}/${TRAINEES.length} done` : "";
@@ -147,7 +179,7 @@ function chrome() {
     )
     .join("");
 
-  if (!TRAINER_APP) $("#roster-count").textContent = bodies.length ? `${bodies.filter((b) => b.online).length}/${bodies.length}` : "";
+  if (!TRAINER_APP && !TEACH_APP) $("#roster-count").textContent = bodies.length ? `${bodies.filter((b) => b.online).length}/${bodies.length}` : "";
 
   const atMac = o?.presence?.atMac;
   $("#presence").innerHTML = o
@@ -217,12 +249,12 @@ window.addEventListener("hashchange", () => {
 const openSearch = () => openPalette([...NAV, ...SPACES].map(([id, label]) => [id, label, ICON_FOR[id]]));
 if ($("#search-trigger")) $("#search-trigger").onclick = openSearch;
 document.addEventListener("keydown", (e) => {
-  if (e.metaKey && e.key.toLowerCase() === "k" && !TRAINER_APP) {
+  if (e.metaKey && e.key.toLowerCase() === "k" && !TRAINER_APP && !TEACH_APP) {
     e.preventDefault();
     return $(".palette-scrim") ? closePalette() : openSearch();
   }
   if (e.key === "Escape") closeDrawer();
-  if (e.metaKey && /^[0-9]$/.test(e.key) && !TRAINER_APP) {
+  if (e.metaKey && /^[0-9]$/.test(e.key) && !TRAINER_APP && !TEACH_APP) {
     e.preventDefault();
     const all = [...NAV, ...SPACES];
     const target = all[(Number(e.key) + 9) % 10];

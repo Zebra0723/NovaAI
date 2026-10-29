@@ -271,9 +271,95 @@ link.requestApproval("zenith", { title: "Spend $12 on a domain for the tennis si
   });
 }
 
+// Galaxy Teach: a week of lessons, one half done, and two things that just came up.
+{
+  const t = link.teach;
+  link.hello("teach", { version: "0.1.0" });
+  const lesson = (title: string) => ({
+    title,
+    minutes: 15,
+    hook: "Medic runs this on your members every time one falls over. Time to know what it actually does.",
+    concepts: ["launchd agents", "launchctl kickstart"],
+    sections: [
+      {
+        kind: "explain",
+        title: "launchd is your Mac's night shift",
+        body: "Every app you don't open yourself is started by **launchd**: the first process your Mac runs, and the one that keeps everything else alive.\n\nGalaxy Link, Zenith, the Trainer and Medic are all `launchd agents`: little instruction cards in `~/Library/LaunchAgents` that say *run this, keep it running, write its log here*. When you ran `galaxy/install.sh`, it wrote those cards and handed them to launchd.",
+        example: { code: "ls ~/Library/LaunchAgents\nai.galaxy.link.plist\nai.galaxy.medic.plist\nai.galaxy.trainer.plist", caption: "Each .plist is one agent. The name inside it (its label) is how you talk about it." },
+        keyPoint: "An agent is a card in ~/Library/LaunchAgents; its label is its name.",
+        check: { q: "Where does galaxyd's instruction card live?", choices: ["/Applications/Galaxy Link.app", "~/Library/LaunchAgents/ai.galaxy.link.plist", "~/GalaxyAI/NovaAI/galaxy"], answer: 1, why: "The app is just the window. The card that keeps galaxyd running is the plist in LaunchAgents." },
+      },
+      {
+        kind: "explain",
+        title: "kickstart: \"start it, now\"",
+        body: "`launchctl kickstart` tells launchd to start an agent right away instead of waiting. Add `-k` and it kills the running copy first, so you get a clean restart.\n\nThe odd bit in the middle, `gui/$(id -u)`, is *whose* agent: yours, in your logged-in session. `$(id -u)` swaps in your user number, like 501.",
+        example: { code: "launchctl kickstart -k gui/$(id -u)/ai.galaxy.link", caption: "Restart Galaxy Link: kill it, then start it fresh." },
+        keyPoint: "kickstart starts it now; -k restarts it; gui/$(id -u) means your session.",
+      },
+      {
+        kind: "scenario",
+        title: "Comet went quiet",
+        story: "It's 4pm and Comet hasn't answered a text in an hour. Galaxy Medic says Comet's port 3000 is taken, and `lsof -i :3000` shows a `bun` process owned by **cometai-by-dailyos**, Comet's own Mac user.\n\nYour Comet is set up to run as that user, not as you.",
+        q: "What do you run?",
+        choices: ["launchctl kickstart -k gui/$(id -u)/com.imessage.server, as you", "Kill the bun process from your account", "Log in as cometai-by-dailyos and kickstart it there"],
+        answer: 2,
+        why: "Comet's agent belongs to cometai-by-dailyos, so gui/$(id -u) has to be *that* user's number. From your account you'd start a second Comet that fights the first for port 3000.",
+        keyPoint: "An agent lives in one user's session: restart it from that user.",
+      },
+      {
+        kind: "practice",
+        title: "Restart the Trainer",
+        task: "The Trainer's label is `ai.galaxy.trainer`. Type the command that restarts it.",
+        hint: "Same shape as the Galaxy Link one: kickstart, -k, your session, then the label.",
+        accept: ["^\\s*launchctl\\s+kickstart\\s+-k\\s+gui/(\\$\\(id -u\\)|\\d+)/ai\\.galaxy\\.trainer\\s*$"],
+        solution: "launchctl kickstart -k gui/$(id -u)/ai.galaxy.trainer",
+        explain: "-k restarts it, gui/$(id -u) is your session, and ai.galaxy.trainer is its label.",
+        keyPoint: "launchctl kickstart -k gui/$(id -u)/LABEL",
+      },
+    ],
+    quiz: [
+      { q: "What does -k add to kickstart?", choices: ["Keeps it running after logout", "Kills the running copy first", "Kicks off every agent"], answer: 1, why: "-k = kill first, so it's a restart.", concept: "launchctl kickstart" },
+      { q: "In gui/501/ai.galaxy.link, what's 501?", choices: ["A port", "Your user number", "The agent's version"], answer: 1, why: "It's your user id; $(id -u) prints it.", concept: "launchd agents" },
+      { q: "Galaxy Link's window is closed. Is galaxyd still running?", choices: ["Yes: launchd runs it, not the app", "No: the app is galaxyd"], answer: 0, why: "The app is only the window onto it.", concept: "launchd agents" },
+      { q: "Medic restarts Zenith. Which label would it use?", choices: ["ai.galaxy.zenith", "Zenith.app", "com.zenith"], answer: 0, why: "Every Galaxy agent is ai.galaxy.<name>.", concept: "launchd agents" },
+    ],
+    takeaways: ["launchctl kickstart -k gui/$(id -u)/LABEL restarts an agent.", "An agent belongs to one user: restart Comet as cometai-by-dailyos."],
+  });
+  const done = [
+    ["ports and localhost", "What a port is (and why 7740 is taken)", 92, 6],
+    ["git pull --rebase", "git pull --rebase, without the fear", 75, 4],
+    ["chmod +x", "Making a script runnable with chmod +x", 100, 3],
+    ["environment variables", "Environment variables, and why launchd can't see yours", 58, 2],
+  ] as const;
+  for (const [topic, title, score, daysAgo] of done) {
+    at(daysAgo * 1440 + 120);
+    const l = t.ask("you", { request: topic });
+    t.write("teach", l.id, lesson(title));
+    const answers = Object.fromEntries([0, 1, 2, 3].map((i) => [`q${i}`, score >= 90 || i < Math.round((score / 100) * 4) ? [1, 1, 0, 0][i] : 2]));
+    at(daysAgo * 1440 + 100);
+    t.progress("you", l.id, { position: 1 });
+    at(daysAgo * 1440 + 82);
+    t.finish("you", l.id, { answers });
+    store.db.query("update teach_lessons set score = ? where id = ?").run(score, l.id);
+  }
+  at(70);
+  const going = t.ask("you", { request: "launchctl kickstart" });
+  t.write("teach", going.id, lesson("What `launchctl kickstart` actually does"));
+  t.progress("you", going.id, { position: 2, answers: { s0: 1 } });
+  t.addNote("you", { lessonId: going.id, text: "Comet is its own user, so restart it from that user, not mine." });
+  t.setStyle("teach", { text: "Examples from their own Galaxy land best; start with the command, then the idea.\nKeep sections short; they skim long paragraphs.\nSlow down on users and permissions (env vars, other Mac users): bring them back for review." });
+  at(3);
+  t.makeOffer("teach", { topic: "lsof -i", title: "Finding what's using a port with `lsof -i`", why: "You ran it twice today to find who had port 3000.", minutes: 12, app: "Terminal" });
+  at(1);
+  t.makeOffer("teach", { topic: "async/await", title: "async and await in TypeScript", why: "Claude used it all over the Trainer's code you were reading.", minutes: 20, app: "Code" });
+  t.setWatcher("you", { watching: true, apps: ["Terminal", "Claude", "claude.ai", "Code"] });
+  setInterval(() => t.setWatcher("you", { watching: true, apps: ["Terminal", "Claude", "claude.ai", "Code"] }), 20_000);
+}
+
 store.now = real;
+link.teach.setWatcher("you", { watching: true, apps: ["Terminal", "Claude", "claude.ai", "Code"] });
 // Everyone but Orbit is running, the way it usually is.
-const running = ["comet", "nova", "nebula", "zenith", "trainer", "medic"];
+const running = ["comet", "nova", "nebula", "zenith", "trainer", "medic", "teach"];
 const beat = () => running.forEach((id) => store.touchBody(id));
 beat();
 setInterval(beat, 20_000);

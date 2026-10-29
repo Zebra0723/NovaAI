@@ -28,6 +28,7 @@ export function specs(home: string, galaxyHome: string): Spec[] {
     { id: "nebula", name: "Nebula", app: { process: "Nebula", bundle: "ai.galaxy.nebula" } },
     { id: "zenith", name: "Zenith", label: "ai.galaxy.zenith", log: `${home}/Galaxy/Missions/zenith.log` },
     { id: "trainer", name: "Trainer", label: "ai.galaxy.trainer", log: `${galaxyHome}/trainer.log` },
+    { id: "teach", name: "Teach", label: "ai.galaxy.teach", log: `${galaxyHome}/teach.log` },
     { id: "orbit", name: "Orbit", optional: true },
   ];
 }

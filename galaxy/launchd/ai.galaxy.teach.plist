@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.galaxy.teach</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__BUN__</string>
+    <string>__ROOT__/src/teach/main.ts</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd starts with a minimal PATH; bun and claude must be findable. -->
+    <key>PATH</key>
+    <string>__PATH__</string>
+    <key>GALAXY_TRAINER_CLAUDE</key>
+    <string>__CLAUDE__</string>
+    <key>HOME</key>
+    <string>__HOME__</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Application Support/Galaxy/teach.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Application Support/Galaxy/teach.log</string>
+</dict>
+</plist>

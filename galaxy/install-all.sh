@@ -65,6 +65,7 @@ say "Galaxy Link"
 step "Galaxy Link (galaxyd)" "$HERE/galaxy/install.sh"
 step "Galaxy Link app" "$HERE/galaxy/app/build-app.sh" --install
 step "Galaxy Trainer app" "$HERE/galaxy/app/build-app.sh" --trainer --install
+step "Galaxy Teach app" "$HERE/galaxy/app/build-app.sh" --teach --install
 
 say "Nova"
 step "Nova app" "$HERE/scripts/build-app.sh" --install

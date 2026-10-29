@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 import { PresenceReader } from "./presence";
 import { Medicine } from "./medicine";
+import { Teach } from "./teach";
 import { Training } from "./training";
 import { Store, type Approval, type Body, type BodyID, type ChatMessage, type InboxItem, type Task } from "./store";
 
@@ -146,6 +147,22 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     sendMe: [],
     notFor: "work of any kind: I keep you running, I don't take tasks",
   },
+  // For the human, not the members: it teaches you what comes up while you work.
+  teach: {
+    name: "Teach",
+    powers: ["teaching"],
+    surface: "none",
+    launch: "",
+    intro:
+      "Hi everyone, I'm Galaxy Teach. I'm here for our human, not for you: when a command or a bit of code " +
+      "comes up while they work, I offer them a short lesson on it. I never record or save their screen.",
+    about:
+      "I'm Galaxy Teach. I notice what comes up in Terminal, the Claude app, claude.ai and VS Code, and offer our human " +
+      "a 10 to 30 minute lesson on it: an explanation, real situations from GalaxyAI, something hands-on and a quiz. " +
+      "Their screen is never recorded or saved.",
+    sendMe: [],
+    notFor: "work of any kind: I teach our human, I don't take tasks",
+  },
   nebula: {
     name: "Nebula",
     powers: ["gestures", "approvals"],
@@ -200,6 +217,7 @@ export class Link {
   launcher: (command: string) => void = defaultLauncher;
   readonly training: Training;
   readonly medicine: Medicine;
+  readonly teach: Teach;
 
   constructor(
     readonly store: Store,
@@ -207,6 +225,7 @@ export class Link {
   ) {
     this.training = new Training(this, store);
     this.medicine = new Medicine(this, store);
+    this.teach = new Teach(this, store);
   }
 
   // ------------------------------------------------------------------ bodies

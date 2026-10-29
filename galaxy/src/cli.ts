@@ -170,8 +170,8 @@ switch (command) {
     const { renameSync } = await import("node:fs");
     renameSync(paths.claudeToken + ".new", paths.claudeToken);
     chmodSync(paths.claudeToken, 0o600);
-    console.log("Signed in. Restarting the trainer and Zenith so they use it.");
-    spawnSync("/bin/sh", ["-c", "launchctl kickstart -k gui/$(id -u)/ai.galaxy.trainer; launchctl kickstart -k gui/$(id -u)/ai.galaxy.zenith"], { stdio: "ignore" });
+    console.log("Signed in. Restarting the trainer, Teach and Zenith so they use it.");
+    spawnSync("/bin/sh", ["-c", "launchctl kickstart -k gui/$(id -u)/ai.galaxy.trainer; launchctl kickstart -k gui/$(id -u)/ai.galaxy.teach; launchctl kickstart -k gui/$(id -u)/ai.galaxy.zenith"], { stdio: "ignore" });
     break;
   }
   case "train": {

@@ -13,7 +13,8 @@ if [ "${1:-}" = "--remove" ]; then
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   launchctl bootout "$DOMAIN/ai.galaxy.trainer" 2>/dev/null || true
   launchctl bootout "$DOMAIN/ai.galaxy.medic" 2>/dev/null || true
-  rm -f "$PLIST" "$HOME/Library/LaunchAgents/ai.galaxy.trainer.plist" "$HOME/Library/LaunchAgents/ai.galaxy.medic.plist" "$HOME/.local/bin/galaxy"
+  launchctl bootout "$DOMAIN/ai.galaxy.teach" 2>/dev/null || true
+  rm -f "$PLIST" "$HOME/Library/LaunchAgents/ai.galaxy.trainer.plist" "$HOME/Library/LaunchAgents/ai.galaxy.medic.plist" "$HOME/Library/LaunchAgents/ai.galaxy.teach.plist" "$HOME/.local/bin/galaxy"
   echo "Galaxy Link removed. Your memories are still in ~/Library/Application Support/Galaxy."
   exit 0
 fi
@@ -67,6 +68,11 @@ if [ -n "$CLAUDE" ]; then
   sed -e "s|__BUN__|$BUN|g" -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" -e "s|__PATH__|$PATHS|g" -e "s|__CLAUDE__|$CLAUDE|g" \
     "$ROOT/launchd/ai.galaxy.trainer.plist" > "$TRAINER_PLIST"
   load_agent ai.galaxy.trainer "$TRAINER_PLIST"
+  # Galaxy Teach: lessons on what comes up while you work, written by Claude the same way.
+  TEACH_PLIST="$HOME/Library/LaunchAgents/ai.galaxy.teach.plist"
+  sed -e "s|__BUN__|$BUN|g" -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" -e "s|__PATH__|$PATHS|g" -e "s|__CLAUDE__|$CLAUDE|g" \
+    "$ROOT/launchd/ai.galaxy.teach.plist" > "$TEACH_PLIST"
+  load_agent ai.galaxy.teach "$TEACH_PLIST"
   [ -s "$HOME/Library/Application Support/Galaxy/claude-token" ] ||
     echo "Galaxy Trainer: sign it in to Claude once with: galaxy login" >&2
 else

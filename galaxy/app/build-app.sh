@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Builds Galaxy Link.app into ./build. Pass --install to copy it to /Applications and open it.
 # Pass --trainer to build Galaxy Trainer.app instead: the same window, opening on the Trainer.
+# Pass --teach for Galaxy Teach.app: the same window on Teach, plus its watcher and menu-bar item.
 #
 # The app is the window; galaxyd serves what's in it. Install galaxyd first (../install.sh).
 # Signs with $GALAXY_SIGN_IDENTITY, else $NOVA_SIGN_IDENTITY (your "Apple Development: …"
@@ -14,6 +15,7 @@ for arg in "$@"; do
     case "$arg" in
         --install) INSTALL=1 ;;
         --trainer) NAME="Galaxy Trainer"; EXE="GalaxyTrainer"; PLIST="Resources/Info-Trainer.plist"; ICON="Resources/AppIcon-Trainer.png" ;;
+        --teach) NAME="Galaxy Teach"; EXE="GalaxyTeach"; PLIST="Resources/Info-Teach.plist"; ICON="Resources/AppIcon-Teach.png" ;;
     esac
 done
 

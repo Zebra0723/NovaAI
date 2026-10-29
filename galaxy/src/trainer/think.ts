@@ -29,7 +29,7 @@ export function claudeEnv(base: Record<string, string | undefined> = process.env
   return env;
 }
 
-export function sdkOptions(model: string, cwd: string, abort: AbortController): Options {
+export function sdkOptions(model: string, cwd: string, abort: AbortController, system = SYSTEM): Options {
   return {
     model,
     cwd,
@@ -41,7 +41,7 @@ export function sdkOptions(model: string, cwd: string, abort: AbortController): 
     strictMcpConfig: true,
     settingSources: [],
     persistSession: false,
-    systemPrompt: SYSTEM,
+    systemPrompt: system,
     env: claudeEnv(),
     hooks: {
       PreToolUse: [
@@ -55,21 +55,21 @@ export function sdkOptions(model: string, cwd: string, abort: AbortController): 
 /** Plain-language reasons for the ways the sign-in goes wrong. */
 export function explain(error: string): string {
   if (/oauth|token.*(expired|invalid)|not logged in|log ?in|authenticat|401|credential/i.test(error)) {
-    return `Claude isn't signed in for the trainer (${error.slice(0, 160)}). Run \`galaxy login\` in Terminal.`;
+    return `Claude isn't signed in for Galaxy (${error.slice(0, 160)}). Run \`galaxy login\` in Terminal.`;
   }
   return error.slice(0, 300);
 }
 
-export function claudeThink(model = process.env.GALAXY_TRAINER_MODEL ?? "sonnet"): Think {
+export function claudeThink(model = process.env.GALAXY_TRAINER_MODEL ?? "sonnet", system = SYSTEM, who = "trainer"): Think {
   const think: Think = async (prompt, timeoutMs) => {
-    const dir = mkdtempSync(join(tmpdir(), "galaxy-trainer-"));
+    const dir = mkdtempSync(join(tmpdir(), `galaxy-${who}-`));
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), timeoutMs);
     let result: string | null = null;
     let error = "";
     const said: string[] = [];
     try {
-      for await (const message of query({ prompt, options: sdkOptions(model, dir, abort) })) {
+      for await (const message of query({ prompt, options: sdkOptions(model, dir, abort, system) })) {
         if (message.type === "assistant") {
           for (const block of message.message.content ?? []) if (block.type === "text" && typeof block.text === "string") said.push(block.text);
         }
@@ -87,7 +87,7 @@ export function claudeThink(model = process.env.GALAXY_TRAINER_MODEL ?? "sonnet"
     // Out of turns but it did write something: that's still the answer.
     if (!result && said.length) result = said.join("\n");
     think.lastError = result ? undefined : explain(error || "no answer");
-    if (!result) console.error(`trainer: Claude gave nothing back: ${think.lastError}`);
+    if (!result) console.error(`${who}: Claude gave nothing back: ${think.lastError}`);
     return result;
   };
   return think;

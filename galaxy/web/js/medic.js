@@ -6,7 +6,7 @@ import { avatar, hex, icon, MEMBERS } from "./marks.js";
 import { poke, state } from "./state.js";
 import { ago, clock, esc, toast } from "./util.js";
 
-const ORDER = ["link", "comet", "nova", "nebula", "zenith", "trainer", "orbit"];
+const ORDER = ["link", "comet", "nova", "nebula", "zenith", "trainer", "teach", "orbit"];
 const LABEL = { healthy: "Healthy", recovering: "Recovering", needs_you: "Needs you", off: "Off", unknown: "Checking" };
 const nameOf = (id) => MEMBERS[id]?.name ?? id.charAt(0).toUpperCase() + id.slice(1);
 

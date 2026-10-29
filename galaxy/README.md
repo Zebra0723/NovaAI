@@ -91,3 +91,30 @@ it can: twelve minutes each, twenty-four for Nebula.
 - `galaxy trainer reset` wipes all training (every member starts again from its brief).
 - Settings (environment of `ai.galaxy.trainer`): `GALAXY_TRAINER_WINDOW` (`1-6`), `GALAXY_TRAINER_MODEL`
   (`sonnet`). Its log: `~/Library/Application Support/Galaxy/trainer.log`.
+
+## Galaxy Teach
+
+Teaches **you**, not the members. When a command, a bit of code or a new idea comes up while you work,
+Teach offers you a lesson on it straight away.
+
+- **What it watches:** only the window in front, and only when it's Terminal, the Claude app, claude.ai
+  (in Safari, Chrome, Arc, Edge or Brave, when the tab is Claude) or VS Code. Terminal is read through its
+  own scripting; the others are read with the Mac's own text recognition (Screen Recording permission).
+- **Never records or saves your screen.** The watcher (inside **Galaxy Teach.app**) picks out a few lines
+  worth teaching from (commands, code, never anything that looks like a secret, an email or a phone
+  number) and hands them to Link, which keeps them **in memory only** until Teach turns them into a topic
+  name. No screenshots, no screen text, no logs. What's saved: topics, your lessons, your progress and
+  your notes.
+- **Notifications:** *New: what `lsof -i` does · 12 min*, with **Begin lesson** and **Skip**. Skip a topic
+  twice and it's never offered again; topics you know solidly aren't offered either.
+- **Lessons** (10 to 30 minutes, written by Claude for you): engaging explanations with examples from your
+  own GalaxyAI, real-world scenarios set in it, hands-on steps you type into a practice terminal (nothing
+  is run; Claude checks answers that aren't an exact match), and a quiz. Stop anywhere; when you come back
+  you get the choice of a one-minute recap.
+- **It learns how you learn:** quiz results move each topic between *new*, *getting there* and *solid*,
+  the takeaways become notes, and after every lesson Teach updates what it knows about how you learn best.
+- **Where:** the Teach space in Galaxy Link, or **Galaxy Teach.app** (it starts with your Mac, lives in the
+  menu bar, and keeps watching with its window closed; *Pause watching* is in its menu). Ask for any lesson
+  with *Teach me about…*.
+- The daemon is `ai.galaxy.teach` (`src/teach`), on your Max plan like the Trainer. Its log:
+  `~/Library/Application Support/Galaxy/teach.log`. Model: `GALAXY_TEACH_MODEL` (`sonnet`).

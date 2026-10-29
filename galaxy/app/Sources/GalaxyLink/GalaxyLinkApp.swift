@@ -78,15 +78,65 @@ enum Link {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: LinkWindowController!
+    /// Galaxy Teach.app only: the watcher, and its menu-bar item.
+    private var watcher: TeachWatcher?
+    private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMenu()
         controller = LinkWindowController()
+        if Link.space == "teach" {
+            startTeach()
+            // Started with the Mac: watch quietly; the window opens when a lesson does.
+            let event = NSAppleEventManager.shared().currentAppleEvent
+            let atLogin = event?.eventID == AEEventID(kAEOpenApplication)
+                && event?.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue == OSType(keyAELaunchedAsLogInItem)
+            if atLogin { return }
+        }
         controller.showWindow(nil)
         NSApp.activate()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// Teach keeps watching with its window closed; quitting it from the menu bar stops it.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { Link.space != "teach" }
+
+    private func startTeach() {
+        let watcher = TeachWatcher()
+        watcher.open = { [weak self] lesson in
+            guard let self else { return }
+            self.controller.go(lesson.map { "teach/lesson/\($0)" } ?? "teach")
+            self.controller.showWindow(nil)
+            NSApp.activate()
+        }
+        watcher.onChange = { [weak self] in self?.drawStatusMenu() }
+        self.watcher = watcher
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.image = NSImage(systemSymbolName: "graduationcap", accessibilityDescription: "Galaxy Teach")
+        statusItem = item
+        drawStatusMenu()
+        watcher.start()
+    }
+
+    private func drawStatusMenu() {
+        guard let watcher, let item = statusItem else { return }
+        let menu = NSMenu()
+        let state = menu.addItem(withTitle: watcher.statusLine, action: nil, keyEquivalent: "")
+        state.isEnabled = false
+        menu.addItem(.separator())
+        menu.addItem(withTitle: watcher.paused ? "Resume watching" : "Pause watching", action: #selector(togglePaused), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Open Galaxy Teach", action: #selector(openTeach), keyEquivalent: "").target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Your screen is never recorded or saved", action: nil, keyEquivalent: "").isEnabled = false
+        menu.addItem(withTitle: "Quit Galaxy Teach", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        item.menu = menu
+        item.button?.appearsDisabled = watcher.paused
+    }
+
+    @objc private func togglePaused() { watcher?.setPaused(!(watcher?.paused ?? false)) }
+    @objc private func openTeach() {
+        controller.showWindow(nil)
+        NSApp.activate()
+    }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         controller.showWindow(nil)
@@ -215,6 +265,12 @@ final class LinkWindowController: NSWindowController, WKNavigationDelegate, WKUI
         let script = "window.__GALAXY__ = Object.freeze({ token: \(Self.jsString(token)), app: true });"
         content.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView.load(URLRequest(url: Link.startPage))
+    }
+
+    /// Shows a page of the app: "teach/lesson/l_…".
+    func go(_ route: String) {
+        if offline { load() }
+        webView.evaluateJavaScript("location.hash = \(Self.jsString("#/" + route))", completionHandler: nil)
     }
 
     func zoom(_ step: CGFloat?) {

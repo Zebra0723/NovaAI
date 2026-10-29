@@ -14,6 +14,7 @@ export const state = {
   approvals: [],
   // Galaxy Trainer: the overview, one member's detail while its page is open, and every 1:1 thread.
   medic: null,
+  teach: null,
   training: null,
   trainingFocus: "",
   trainingDetail: {},
@@ -68,6 +69,11 @@ async function refresh() {
   if (JSON.stringify(medic) !== JSON.stringify(state.medic)) {
     state.medic = medic;
     changed("medic");
+  }
+  const teach = await api.teach().catch(() => null);
+  if (JSON.stringify(teach) !== JSON.stringify(state.teach)) {
+    state.teach = teach;
+    changed("teach");
   }
   const [training, detail] = await Promise.all([
     api.training().catch(() => null),
