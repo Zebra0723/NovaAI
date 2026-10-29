@@ -125,8 +125,13 @@ describe("a training session", () => {
     const session = await coach.session("comet", "2026-10-28");
     expect(session).toMatchObject({ status: "done", drills: 2, score: 80 });
     expect(log).toEqual(["plan", "rehearse", "grade", "rehearse", "grade", "wrap"]);
-    const kinds = link.training.thread("comet").map((m) => m.kind);
+    const kinds = link.training.thread("comet").filter((m) => m.kind !== "change").map((m) => m.kind);
     expect(kinds).toEqual(["message", "message", "drill", "answer", "feedback", "drill", "answer", "feedback", "summary"]);
+    // Link itself records what really changed in the program, from before and after.
+    const change = link.training.thread("comet").find((m) => m.kind === "change")!;
+    expect(change).toMatchObject({ speaker: "link" });
+    expect(change.text).toContain("Program v1 → v2");
+    expect(change.text).toContain("+ scenarios: New number");
     expect(session?.trigger).toBe("night");
     expect(link.training.thread("comet").find((m) => m.kind === "answer")).toMatchObject({ speaker: "comet", rehearsal: true });
     expect(link.training.program("comet")!.plan.scenarios.some((s) => s.title === "New number")).toBe(true);
@@ -318,6 +323,15 @@ describe("a training session", () => {
 });
 
 describe("keeping training honest", () => {
+  test("an unchanged program keeps its version, and records no change", async () => {
+    link.hello("comet", {});
+    const plan = { focus: ["a"], rubric: ["r"], scenarios: [{ title: "t", setup: "s" }], observations: [] };
+    await as("trainer")("PUT", "/v1/training/comet/program", { brief: "b", plan });
+    const again = await as("trainer")<any>("PUT", "/v1/training/comet/program", { plan });
+    expect(again.version).toBe(1);
+    expect(link.training.thread("comet").filter((m) => m.kind === "change")).toHaveLength(0);
+  });
+
   test("a session left running when the trainer isn't is closed, not shown as training", async () => {
     link.hello("comet", {});
     link.hello("trainer", {});

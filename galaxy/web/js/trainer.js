@@ -240,6 +240,7 @@ const trainer = {
 // ------------------------------------------------------------- member page
 
 let tab = "playbook";
+let lastAside = "";
 
 function threadHTML(id, list) {
   let html = "";
@@ -279,6 +280,10 @@ function threadHTML(id, list) {
       html += `<div class="tm world${fresh}"><div class="world-card"><div class="world-k">${icon("rehearse")}What happens next<time>${esc(clock(m.at))}</time></div><p>${richText(m.text)}</p></div></div>`;
     } else if (m.kind === "results") {
       html += resultsHTML(m, fresh);
+    } else if (m.kind === "change") {
+      const [head, ...rows] = m.text.split("\n");
+      html += `<div class="tm change${fresh}"><div class="change-card"><div class="change-k">${icon("note")}${esc(head)}<span>recorded by Galaxy Link</span><time>${esc(clock(m.at))}</time></div>
+        <ul>${rows.map((r) => `<li class="${r.startsWith("+") ? "plus" : "minus"}">${esc(r.replace(/^[+−]\s*/, ""))}</li>`).join("")}</ul></div></div>`;
     } else if (m.kind === "answer") {
       html += `<div class="tm answer${fresh}" data-body="${id}">${avatar(id, "sm")}<div class="bubble">
         <div class="meta"><b>${esc(nameOf(id))}</b>${m.rehearsal ? `<span class="tag">${icon("rehearse")}Rehearsed by the trainer</span>` : `<span class="tag own">${icon("live")}Its own answer</span>`}<time>${esc(clock(m.at))}</time></div>
@@ -432,7 +437,8 @@ const training = {
       const t = e.target.closest("[data-tab]");
       if (t) {
         tab = t.dataset.tab;
-        $("#t-aside").innerHTML = asideHTML(id);
+        lastAside = asideHTML(id);
+        $("#t-aside").innerHTML = lastAside;
         return;
       }
       const l = e.target.closest("[data-lesson]");
@@ -494,8 +500,21 @@ const training = {
       if (head) head.innerHTML = headHTML(id);
       const alert = $("#t-alert");
       if (alert) alert.innerHTML = alertHTML();
+      // Redraw the side panel whenever its data changes, keeping your place in it. (It used to
+      // skip redrawing while anything in it had focus, and a clicked tab keeps focus, so the
+      // program, playbook and history froze on whatever they showed when you clicked.)
       const aside = $("#t-aside");
-      if (aside && !aside.contains(document.activeElement)) aside.innerHTML = asideHTML(id);
+      if (aside) {
+        const html = asideHTML(id);
+        if (html !== lastAside) {
+          const body = aside.querySelector(".tab-body");
+          const top = body?.scrollTop ?? 0;
+          aside.innerHTML = html;
+          lastAside = html;
+          const again = aside.querySelector(".tab-body");
+          if (again) again.scrollTop = top;
+        }
+      }
       this.drawLive(id);
     }
   },

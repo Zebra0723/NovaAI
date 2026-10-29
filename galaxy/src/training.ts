@@ -10,6 +10,7 @@
 // does it: members that support practice answer through their own brain with
 // no tools; the rest are rehearsed by the trainer and marked as such.
 
+import { diffPlans } from "./casebook";
 import type { Link } from "./link";
 import type { BodyID, Store } from "./store";
 
@@ -81,7 +82,7 @@ export interface Lesson {
   createdAt: number;
 }
 
-export type ThreadKind = "message" | "drill" | "answer" | "feedback" | "summary" | "note" | "sim" | "results";
+export type ThreadKind = "message" | "drill" | "answer" | "feedback" | "summary" | "note" | "sim" | "results" | "change";
 
 /** A line in the 1:1 between the trainer and one member. You can add notes; you watch the rest. */
 export interface ThreadMessage {
@@ -276,13 +277,38 @@ export class Training {
     const before = this.program(member);
     const brief = clean(input.brief, 6000) || before?.brief || "";
     const plan = tidyPlan(input.plan ?? before?.plan ?? {});
+    // The version goes up only when something really changed: no new number for an unchanged program.
+    if (before && brief === before.brief && JSON.stringify(plan) === JSON.stringify(tidyPlan(before.plan))) return before;
     this.db
       .query(
         `insert into training_programs (member, brief, plan, version, updated_at) values (?, ?, ?, 1, ?)
          on conflict(member) do update set brief = excluded.brief, plan = excluded.plan, version = version + 1, updated_at = excluded.updated_at`,
       )
       .run(member, brief, JSON.stringify(plan), this.now());
-    return this.program(member)!;
+    const after = this.program(member)!;
+    if (before) this.recordChange(member, before, after);
+    return after;
+  }
+
+  /**
+   * Link's own line in the 1:1 saying what the trainer changed, worked out from the program
+   * before and after. It's what really happened, whatever the trainer says about it.
+   */
+  private recordChange(member: BodyID, before: Program, after: Program) {
+    const d = diffPlans(before.plan, after.plan);
+    if (d.empty) return;
+    const label: Record<string, string> = { focus: "focus", rubric: "graded on", observations: "noticed", scenarios: "scenarios" };
+    const lines: string[] = [];
+    for (const k of ["focus", "scenarios", "rubric", "observations"]) {
+      const plus = d.added[k] ?? [];
+      const minus = d.removed[k] ?? [];
+      if (plus.length) lines.push(`+ ${label[k]}: ${plus.slice(0, 4).join(" · ")}${plus.length > 4 ? ` (+${plus.length - 4} more)` : ""}`);
+      if (minus.length && k !== "observations") lines.push(`− ${label[k]}: ${minus.slice(0, 3).join(" · ")}${minus.length > 3 ? ` (+${minus.length - 3} more)` : ""}`);
+    }
+    this.db
+      .query("insert into training_thread (member, speaker, kind, text, session_id, rehearsal, score, at) values (?, 'link', 'change', ?, '', 0, null, ?)")
+      .run(member, `Program v${before.version} → v${after.version}\n${lines.join("\n")}`, this.now());
+    for (const wake of [...this.threadWaiters]) wake();
   }
 
   // ---------------------------------------------------------------- sessions
