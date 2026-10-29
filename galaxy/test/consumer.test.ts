@@ -50,7 +50,11 @@ describe("the consumer edition", () => {
     // Only the Galaxy Link window can sign in: not a member.
     expect((await c.fetch(req("/v1/account/signup", "POST", { email: "a@example.com", password: "password1" }, "nova"))).status).toBe(403);
     const r = await (await c.fetch(req("/v1/account/signup", "POST", { email: "a@example.com", password: "password1" }))).json();
-    expect(r).toMatchObject({ signedIn: true, user: { email: "a@example.com" }, ai: true });
+    expect(r).toMatchObject({ signedIn: true, user: { email: "a@example.com" }, claude: false });
+    // Their own Claude, connected once, for every member.
+    expect((await c.fetch(req("/v1/account/claude", "PUT", { token: "not a token" }))).status).toBe(400);
+    const claude = await (await c.fetch(req("/v1/account/claude", "PUT", { token: "sk-ant-oat01-" + "x".repeat(40) }))).json();
+    expect(claude.claude).toBe(true);
     expect((await c.fetch(req("/v1/overview"))).status).toBe(200);
     c.close();
   });

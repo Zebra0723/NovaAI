@@ -66,6 +66,9 @@ export function consumerLink(token: string, account = new Account(galaxyHome()),
       await open();
       return json(status());
     }
+    // The person's own Claude: what `claude setup-token` printed, pasted into Galaxy Link.
+    if (path === "/v1/account/claude" && req.method === "PUT") return json({ ...account.setClaude((await input()).token), ...{ sync: status().sync } });
+    if (path === "/v1/account/claude" && req.method === "DELETE") return json(account.forgetClaude());
     if (path === "/v1/account/signout" && req.method === "POST") {
       // Last changes go up first, then this Mac forgets the session and its Claude key.
       await syncer?.push().catch(() => {});

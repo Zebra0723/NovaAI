@@ -13,14 +13,72 @@ export async function accountGate() {
   for (;;) {
     try {
       account = await call("GET", "/v1/account");
-      if (account?.signedIn) return account;
+      if (account?.signedIn && (account.claude || skippedClaude())) return account;
       break;
     } catch {
       await new Promise((r) => setTimeout(r, 2000)); // Link starting up
     }
   }
-  await new Promise((done) => drawGate(done));
+  if (!account?.signedIn) await new Promise((done) => drawGate(done));
+  if (!account.claude && !skippedClaude()) await new Promise((done) => drawClaude(done));
   return account;
+}
+
+const skippedClaude = () => {
+  try {
+    return sessionStorage.getItem("galaxy-claude-later") === "1";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Connect Claude: the members that think (the Trainer, Medic, Zenith) use the person's own
+ * Claude account. `claude setup-token` signs in in the browser and prints a long-lived
+ * token; Galaxy Link opens Terminal with it ready to run, and the token is pasted here.
+ */
+function drawClaude(done) {
+  const root = document.createElement("div");
+  root.className = "gate";
+  document.body.append(root);
+  const inApp = !!window.webkit?.messageHandlers?.galaxy;
+  const draw = (note = "") => {
+    root.innerHTML = `<div class="gate-card">
+      ${brandMark("gate-mark")}
+      <h1>Connect <em>Claude</em></h1>
+      <p class="gate-sub">Galaxy thinks with your own Claude account (Pro or Max). Connect it once and every member can use it.</p>
+      <ol class="gate-steps">
+        <li>${inApp ? `<button class="btn" id="open-signin">Open Claude sign-in</button>` : `In Terminal, run <code>claude setup-token</code>`}<span>Sign in to Claude in the browser that opens.</span></li>
+        <li><span>Terminal then shows a token starting with <code>sk-ant-</code>. Copy it and paste it here.</span></li>
+      </ol>
+      <form id="claude-form">
+        <label>Claude token<input id="claude-token" type="password" autocomplete="off" placeholder="sk-ant-…" required></label>
+        <button class="btn primary big" type="submit">Connect Claude</button>
+      </form>
+      ${note ? `<p class="gate-note">${note}</p>` : ""}
+      <p class="gate-switch"><a href="#" id="claude-later">Do this later</a></p>
+    </div>`;
+    root.querySelector("#open-signin")?.addEventListener("click", () => window.webkit.messageHandlers.galaxy.postMessage("connectClaude"));
+    root.querySelector("#claude-later").onclick = (e) => {
+      e.preventDefault();
+      try {
+        sessionStorage.setItem("galaxy-claude-later", "1");
+      } catch {}
+      root.remove();
+      done();
+    };
+    root.querySelector("#claude-form").onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        account = { ...account, ...(await call("PUT", "/v1/account/claude", { token: root.querySelector("#claude-token").value.trim() })) };
+        root.remove();
+        done();
+      } catch (error) {
+        draw(`<span class="bad">${esc(error.message)}</span>`);
+      }
+    };
+  };
+  draw();
 }
 
 function drawGate(done) {
@@ -77,8 +135,14 @@ export function mountAccountChip() {
   if (!foot || !account?.user) return;
   const chip = document.createElement("div");
   chip.className = "account-chip";
-  chip.innerHTML = `<span class="who-email" title="${esc(account.user.email)}">${esc(account.user.email)}</span><button class="btn sm" id="sign-out">Sign out</button>`;
+  chip.innerHTML = `<span class="who-email" title="${esc(account.user.email)}">${esc(account.user.email)}</span>${account.claude ? "" : `<button class="btn sm" id="connect-claude" title="The Trainer, Medic and Zenith need it">Connect Claude</button>`}<button class="btn sm" id="sign-out">Sign out</button>`;
   foot.prepend(chip);
+  chip.querySelector("#connect-claude")?.addEventListener("click", () => {
+    try {
+      sessionStorage.removeItem("galaxy-claude-later");
+    } catch {}
+    location.reload();
+  });
   chip.querySelector("#sign-out").onclick = async () => {
     if (!confirm("Sign out of Galaxy on this Mac? Everything stays in your account.")) return;
     try {

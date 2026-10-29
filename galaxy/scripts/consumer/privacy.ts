@@ -25,7 +25,7 @@ const RULES: [string, RegExp][] = [
   ["an allowlist", /\ballow[ -]?list\b/i],
   ["a Gmail address", /[\w.+-]+@gmail\.com/i],
   ["a phone number", /\+1[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}\b/],
-  ["the owner's Claude sign-in", /CLAUDE_CODE_OAUTH_TOKEN=|sk-ant-[a-z0-9]/i],
+  ["a Claude token", /sk-ant-(?:oat|api|admin)\d\d-[A-Za-z0-9_-]{20,}/],
   ["the owner's Galaxy folder", /Application Support\/Galaxy\/(?!\.\.)|Library\/Application Support\/Galaxy"/],
 ];
 

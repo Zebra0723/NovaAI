@@ -10,9 +10,8 @@ import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
 import { isConsumer } from "../edition";
-import { galaxyHome, readClaudeToken } from "../paths";
+import { readClaudeToken } from "../paths";
 
 /** Text back, or null. When it's null, `lastError` says why. */
 export type Think = ((prompt: string, timeoutMs: number) => Promise<string | null>) & { lastError?: string };
@@ -25,24 +24,9 @@ const SYSTEM =
 /** The environment Claude runs with: the plan sign-in, never an API key. */
 export function claudeEnv(base: Record<string, string | undefined> = process.env, token = readClaudeToken()): Record<string, string | undefined> {
   const env = { ...base };
-  // The consumer edition: Claude through the Galaxy proxy, with this Mac's key from the account.
-  if (isConsumer()) {
-    delete env.CLAUDE_CODE_OAUTH_TOKEN;
-    delete env.ANTHROPIC_AUTH_TOKEN;
-    try {
-      const ai = JSON.parse(readFileSync(`${galaxyHome()}/ai.json`, "utf8"));
-      env.ANTHROPIC_BASE_URL = ai.baseUrl;
-      env.ANTHROPIC_API_KEY = ai.apiKey;
-    } catch {
-      delete env.ANTHROPIC_API_KEY;
-    }
-    return env;
-  }
-  // #owner
   delete env.ANTHROPIC_API_KEY;
   delete env.ANTHROPIC_AUTH_TOKEN;
   if (token && !base.CLAUDE_CODE_OAUTH_TOKEN) env.CLAUDE_CODE_OAUTH_TOKEN = token;
-  // #end
   return env;
 }
 
@@ -59,6 +43,8 @@ export function sdkOptions(model: string, cwd: string, abort: AbortController, s
     settingSources: [],
     persistSession: false,
     systemPrompt: system,
+    // The consumer app has no Node: Claude Code runs on the Bun it ships with.
+    ...(isConsumer() ? { executable: "bun" as const } : {}),
     env: claudeEnv(),
     hooks: {
       PreToolUse: [
@@ -71,10 +57,9 @@ export function sdkOptions(model: string, cwd: string, abort: AbortController, s
 
 /** Plain-language reasons for the ways the sign-in goes wrong. */
 export function explain(error: string): string {
-  if (isConsumer() && /401|403|api key|authenticat|credential|not logged in/i.test(error)) {
-    return `Galaxy can't reach Claude for this account (${error.slice(0, 160)}). Sign in again in Galaxy Link.`;
+  if (isConsumer() && /oauth|token.*(expired|invalid)|not logged in|log ?in|authenticat|401|credential/i.test(error)) {
+    return `Galaxy isn't connected to Claude (${error.slice(0, 160)}). Connect Claude again from the account menu in Galaxy Link.`;
   }
-  if (isConsumer() && /429|limit/i.test(error)) return "Today's Claude allowance for this account is used up. It resets tomorrow.";
   // #owner
   if (/oauth|token.*(expired|invalid)|not logged in|log ?in|authenticat|401|credential/i.test(error)) {
     return `Claude isn't signed in for Galaxy (${error.slice(0, 160)}). Run \`galaxy login\` in Terminal.`;

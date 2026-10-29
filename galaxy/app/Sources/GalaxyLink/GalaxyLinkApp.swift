@@ -17,12 +17,18 @@ enum GalaxyLinkMain {
 
 /// Where galaxyd lives and how to reach it.
 enum Link {
+    // #owner
     static let home = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Galaxy", isDirectory: true)
+    static let defaultPort = 7740
+    // #consumer static let home = FileManager.default.homeDirectoryForCurrentUser
+    // #consumer     .appendingPathComponent("Library/Application Support/Galaxy Consumer", isDirectory: true)
+    // #consumer static let defaultPort = 7750
+    // #end
 
     static var port: Int {
         let saved = try? String(contentsOf: home.appendingPathComponent("port"), encoding: .utf8)
-        return saved.flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? 7740
+        return saved.flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? defaultPort
     }
 
     static var address: URL { URL(string: "http://127.0.0.1:\(port)/")! }
@@ -50,13 +56,23 @@ enum Link {
         return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
+    // #owner
+    static let label = "ai.galaxy.link"
+    static let notInstalled = "Galaxy Link isn't installed yet. In the NovaAI repo, run galaxy/install.sh."
+    // #consumer static let label = "ai.galaxy.consumer.link"
+    // #consumer static let notInstalled = "Galaxy Link couldn't start. Quit it and open it again from Applications."
+    // #end
+
     /// Asks launchd to start galaxyd. Returns a problem to show, or nil.
     static func start() async -> String? {
-        await withCheckedContinuation { continuation in
+        // #owner
+        // #consumer ConsumerAgents.install()
+        // #end
+        return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-                process.arguments = ["kickstart", "gui/\(getuid())/ai.galaxy.link"]
+                process.arguments = ["kickstart", "gui/\(getuid())/\(label)"]
                 let pipe = Pipe()
                 process.standardError = pipe
                 process.standardOutput = pipe
@@ -68,7 +84,7 @@ enum Link {
                 if process.terminationStatus == 0 {
                     continuation.resume(returning: nil)
                 } else {
-                    continuation.resume(returning: "Galaxy Link isn't installed yet. In the NovaAI repo, run galaxy/install.sh.")
+                    continuation.resume(returning: notInstalled)
                 }
             }
         }
@@ -78,13 +94,19 @@ enum Link {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: LinkWindowController!
+    // #owner
     /// Galaxy Teach.app only: the watcher, and its menu-bar item.
     private var watcher: TeachWatcher?
     private var statusItem: NSStatusItem?
+    // #end
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMenu()
+        // #owner
+        // #consumer ConsumerAgents.install() // Galaxy Link, the Trainer and Medic, running in the background
+        // #end
         controller = LinkWindowController()
+        // #owner
         if Link.space == "teach" {
             startTeach()
             // Started with the Mac: watch quietly; the window opens when a lesson does.
@@ -93,13 +115,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 && event?.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue == OSType(keyAELaunchedAsLogInItem)
             if atLogin { return }
         }
+        // #end
         controller.showWindow(nil)
         NSApp.activate()
     }
 
     /// Teach keeps watching with its window closed; quitting it from the menu bar stops it.
+    // #owner
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { Link.space != "teach" }
+    // #consumer func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    // #end
 
+    // #owner
     private func startTeach() {
         let watcher = TeachWatcher()
         watcher.open = { [weak self] lesson in
@@ -150,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.showWindow(nil)
         NSApp.activate()
     }
+    // #end
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         controller.showWindow(nil)
@@ -310,6 +338,9 @@ final class LinkWindowController: NSWindowController, WKNavigationDelegate, WKUI
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        // #owner
+        // #consumer if message.name == "galaxy", (message.body as? String) == "connectClaude" { ConsumerAgents.openClaudeSignIn(); return }
+        // #end
         guard offline, message.name == "galaxy", (message.body as? String) == "start" else { return }
         setStatus("Starting Galaxy Link…")
         Task {

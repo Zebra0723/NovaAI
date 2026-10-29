@@ -1,9 +1,9 @@
 // The consumer edition's Galaxy account: one sign-in for Galaxy Link and every member.
 //
 // Accounts live in Supabase (consumer/supabase). Signing in here keeps the session in
-// account.json and a device key for Claude in ai.json, both readable by this Mac user
-// alone; every member reads ai.json to think, so nobody signs in twice. Signing out
-// deletes both and revokes the device key.
+// account.json, readable by this Mac user alone. Claude is the person's own: they connect
+// their Claude account once (claude-token, the same as in the owner's Galaxy) and every
+// member that thinks with Claude Code uses it.
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,12 +16,6 @@ export interface Session {
   refreshToken: string;
   /** ms since epoch. */
   expiresAt: number;
-}
-
-/** What every member needs to reach Claude through the Galaxy proxy. */
-export interface AiAccess {
-  baseUrl: string;
-  apiKey: string;
 }
 
 export class AccountError extends Error {
@@ -53,8 +47,9 @@ export class Account {
   private get file() {
     return join(this.home, "account.json");
   }
-  get aiFile() {
-    return join(this.home, "ai.json");
+  /** The person's own Claude sign-in, as `claude setup-token` gives it. */
+  get claudeFile() {
+    return join(this.home, "claude-token");
   }
 
   get signedIn() {
@@ -77,7 +72,7 @@ export class Account {
       signedIn: this.signedIn,
       user: this.user,
       configured: !!(this.service.url && this.service.anonKey),
-      ai: existsSync(this.aiFile),
+      claude: existsSync(this.claudeFile),
     };
   }
 
@@ -101,18 +96,9 @@ export class Account {
 
   async signOut() {
     const token = this.session?.accessToken;
-    if (token) {
-      // Revoke this Mac's Claude key and end the session. Signed out here either way.
-      let key = "";
-      try {
-        key = JSON.parse(readFileSync(this.aiFile, "utf8")).apiKey ?? "";
-      } catch {}
-      await this.call("DELETE", "/functions/v1/device-key", { key }, token).catch(() => null);
-      await this.call("POST", "/auth/v1/logout", {}, token).catch(() => null);
-    }
+    if (token) await this.call("POST", "/auth/v1/logout", {}, token).catch(() => null);
     this.session = null;
     rmSync(this.file, { force: true });
-    rmSync(this.aiFile, { force: true });
     return this.status();
   }
 
@@ -128,32 +114,33 @@ export class Account {
       if (e instanceof AccountError && e.status >= 400 && e.status < 500) {
         this.session = null;
         rmSync(this.file, { force: true });
-        rmSync(this.aiFile, { force: true });
       }
       throw e;
     }
     return this.session!.accessToken;
   }
 
-  /** The Galaxy proxy and this Mac's device key, made once per sign-in. */
-  async ai(): Promise<AiAccess> {
-    try {
-      return JSON.parse(readFileSync(this.aiFile, "utf8"));
-    } catch {}
-    const token = await this.accessToken();
-    const r = await this.call("POST", "/functions/v1/device-key", { name: "Mac" }, token);
-    if (!r?.key) throw new AccountError(502, "the Galaxy service didn't give this Mac a key");
-    const access: AiAccess = { baseUrl: `${this.service.url}/functions/v1/claude`, apiKey: r.key };
-    writeFileSync(this.aiFile, JSON.stringify(access), { mode: 0o600 });
-    chmodSync(this.aiFile, 0o600);
-    return access;
+  /**
+   * Connects the person's own Claude account: the long-lived token `claude setup-token`
+   * prints. Kept on this Mac only, readable by this Mac user alone.
+   */
+  setClaude(token: unknown) {
+    const t = String(token ?? "").trim();
+    if (!/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(t)) throw new AccountError(400, "That doesn't look like a Claude token. It starts with sk-ant-.");
+    writeFileSync(this.claudeFile, t + "\n", { mode: 0o600 });
+    chmodSync(this.claudeFile, 0o600);
+    return this.status();
+  }
+
+  forgetClaude() {
+    rmSync(this.claudeFile, { force: true });
+    return this.status();
   }
 
   // ---------------------------------------------------------------- helpers
 
   private async adopt(r: any) {
     this.save(r);
-    await this.ai().catch((e) => console.error("galaxyd: couldn't get a Claude key yet:", e.message));
   }
 
   private save(r: any) {

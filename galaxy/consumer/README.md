@@ -11,9 +11,10 @@ all, and nothing that knows you.
 - **Accounts.** Everyone signs up for a Galaxy account the first time they open Galaxy Link,
   and that one account works for every member. Each account's memories and training are kept
   in Supabase, and row-level security means nobody can ever see anyone else's.
-- **Claude is on you.** Members reach Claude through your Supabase function (`claude`), which
-  holds your Anthropic API key. Each account has a daily allowance, so nobody can run up your
-  bill.
+- **Everyone uses their own Claude.** After signing in, Galaxy Link asks them to connect their own
+  Claude account (Pro or Max). It opens Terminal on `claude setup-token`, using the Claude Code
+  that ships inside the app, and they paste the token in. The Trainer, Medic and Zenith use it.
+  Nova and Nebula take their own Anthropic key in their settings, as yours do. Nothing is on you.
 - **Your own Galaxy is untouched.** The consumer edition lives in its own folder
   (`~/Library/Application Support/Galaxy Consumer`), on its own port (7750), with its own
   bundle IDs and launchd labels.
@@ -27,12 +28,7 @@ all, and nothing that knows you.
    supabase login
    supabase link --project-ref <your project ref>
    supabase db push
-   supabase secrets set ANTHROPIC_API_KEY=<a key from console.anthropic.com>
-   supabase functions deploy claude --no-verify-jwt
-   supabase functions deploy device-key
    ```
-   You can change the allowance with `supabase secrets set DAILY_TOKEN_LIMIT=3000000`. By
-   default that's 3 million tokens per account per day, Sonnet and Haiku only.
 2. **Put the project's URL and anon key in `consumer/config.json`.** Both are in Supabase under
    Project Settings → API. The anon key is meant to be public; the service key never goes here.
 3. **Your private words** (optional, never committed): put things only you would know, one per
