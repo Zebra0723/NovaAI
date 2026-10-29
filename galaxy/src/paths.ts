@@ -4,11 +4,15 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { isConsumer } from "./edition";
 
+/** Yours on 7740; the consumer edition on 7750, so the two never meet on one Mac. */
 export const DEFAULT_PORT = 7740;
+export const CONSUMER_PORT = 7750;
 
 export function galaxyHome(): string {
-  return process.env.GALAXY_HOME || join(homedir(), "Library", "Application Support", "Galaxy");
+  if (process.env.GALAXY_HOME) return process.env.GALAXY_HOME;
+  return join(homedir(), "Library", "Application Support", isConsumer() ? "Galaxy Consumer" : "Galaxy");
 }
 
 export const paths = {
@@ -70,5 +74,5 @@ export function configuredPort(): number {
     const saved = Number(readFileSync(paths.port, "utf8").trim());
     if (Number.isInteger(saved) && saved > 0) return saved;
   } catch {}
-  return DEFAULT_PORT;
+  return isConsumer() ? CONSUMER_PORT : DEFAULT_PORT;
 }

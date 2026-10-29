@@ -1,0 +1,17 @@
+# Galaxy's Supabase project. Deploy with the commands in consumer/README.md.
+project_id = "galaxy"
+
+[auth]
+site_url = "http://127.0.0.1:7750"
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+# The proxy checks its own device keys, so Supabase doesn't need a sign-in token on it.
+[functions.claude]
+verify_jwt = false
+
+[functions.device-key]
+verify_jwt = true

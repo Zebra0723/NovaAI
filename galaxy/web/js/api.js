@@ -46,6 +46,8 @@ export async function call(method, path, body, { timeout = 10_000 } = {}) {
   }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
+  // Signed out somewhere else (or the session ran out): back to the sign-in.
+  if (res.status === 401 && data.signedOut) location.reload();
   if (!res.ok) throw Object.assign(new Error(data.error || `Link said ${res.status}`), { status: res.status });
   return data;
 }
@@ -74,6 +76,7 @@ export const api = {
   resumeSession: (sid) => call("POST", `/v1/training/sessions/${sid}/resume`, {}),
   stopSession: (sid) => call("POST", `/v1/training/sessions/${sid}/stop`, {}),
   removeSession: (sid) => call("DELETE", `/v1/training/sessions/${sid}`),
+  // #owner
   teach: () => call("GET", "/v1/teach"),
   teachAsk: (request, later = false) => call("POST", "/v1/teach/lessons", { request, later }),
   teachLater: (id) => call("POST", `/v1/teach/offers/${id}/later`, {}),
@@ -90,6 +93,7 @@ export const api = {
   teachNote: (lessonId, text) => call("POST", "/v1/teach/notes", { lessonId, text }),
   teachDeleteNote: (id) => call("DELETE", `/v1/teach/notes/${id}`),
   teachLevel: (key, level) => call("PATCH", `/v1/teach/topics/${encodeURIComponent(key)}`, { level }),
+  // #end
   noteToTrainer: (id, text) => call("POST", `/v1/training/${id}/thread`, { kind: "note", text }),
   setLesson: (id, active) => call("PATCH", `/v1/training/lessons/${id}`, { active }),
   introduce: () => call("POST", "/v1/introductions"),

@@ -10,13 +10,19 @@
 // does it: members that support practice answer through their own brain with
 // no tools; the rest are rehearsed by the trainer and marked as such.
 
+import { exists } from "./edition";
 import { diffPlans } from "./casebook";
 import { BRIEFS } from "./trainer/briefs";
 import type { Link } from "./link";
 import type { BodyID, Store } from "./store";
 
 /** Who training is for: every member that does work. The trainer doesn't train itself. */
-export const TRAINEES = ["comet", "orbit", "nova", "nebula", "zenith"];
+// #owner
+const ALL_TRAINEES = ["comet", "orbit", "nova", "nebula", "zenith"];
+// #consumer const ALL_TRAINEES = ["orbit", "nova", "nebula", "zenith"];
+// #end
+/** The members the trainer trains in this edition (no Comet in the consumer one). */
+export const trainees = () => ALL_TRAINEES.filter(exists);
 export const TRAINER = "trainer";
 /** Minutes of overnight training each member gets: Nebula, whose skill is the hardest to get right, gets double. */
 export const BUDGET_MINUTES: Record<string, number> = { nebula: 24 };
@@ -240,6 +246,7 @@ export class Training {
       this.wipe();
       this.db.query("insert into training_meta (key, value) values ('reset-0.4', ?)").run(String(this.now()));
     }
+    // #owner
     // Comet's brief grew (talking to people he lets in, building for them, never filling in an
     // email). A program made from the old brief takes in the new focus, rubric and scenarios, once.
     if (!this.db.query("select 1 from training_meta where key = 'comet-brief-2'").get()) {
@@ -255,6 +262,7 @@ export class Training {
       }
       this.db.query("insert into training_meta (key, value) values ('comet-brief-2', ?)").run(String(this.now()));
     }
+    // #end
   }
 
   private wipe() {
@@ -299,7 +307,7 @@ export class Training {
   }
 
   private needTrainee(member: string): BodyID {
-    if (!TRAINEES.includes(member) && !this.store.body(member)) throw new TrainingError(404, `no member called ${member}`);
+    if (!trainees().includes(member) && !this.store.body(member)) throw new TrainingError(404, `no member called ${member}`);
     if (member === TRAINER) throw new TrainingError(400, "the trainer doesn't train itself");
     return member;
   }
@@ -313,6 +321,29 @@ export class Training {
   program(member: BodyID): Program | null {
     const r = this.db.query("select * from training_programs where member = ?").get(member) as any;
     return r ? { member: r.member, brief: r.brief, plan: JSON.parse(r.plan), version: r.version, updatedAt: r.updated_at } : null;
+  }
+
+  /** Each member's program and playbook, for keeping in your account. */
+  snapshot(): Record<string, { brief: string; plan: TrainingPlan; version: number; lessons: string[] }> {
+    const out: Record<string, { brief: string; plan: TrainingPlan; version: number; lessons: string[] }> = {};
+    for (const member of trainees()) {
+      const p = this.program(member);
+      if (p) out[member] = { brief: p.brief, plan: p.plan, version: p.version, lessons: this.lessons(member).filter((l) => l.active).map((l) => l.text) };
+    }
+    return out;
+  }
+
+  /** Puts back what your account kept, on a Mac that has none of it yet. Never overwrites. */
+  restore(snapshot: Record<string, { brief?: string; plan?: unknown; version?: number; lessons?: unknown }>) {
+    for (const [member, s] of Object.entries(snapshot ?? {})) {
+      if (!trainees().includes(member) || this.program(member)) continue;
+      this.db
+        .query("insert into training_programs (member, brief, plan, version, updated_at) values (?, ?, ?, ?, ?)")
+        .run(member, clean(s.brief, 6000), JSON.stringify(tidyPlan(s.plan ?? {})), Math.max(1, Math.floor(Number(s.version) || 1)), this.now());
+      for (const text of strings(s.lessons, PLAYBOOK_MAX, LESSON_MAX_CHARS)) {
+        this.db.query("insert into training_lessons (id, member, text, session_id, active, created_at) values (?, ?, ?, '', 1, ?)").run(newID("l"), member, text, this.now());
+      }
+    }
   }
 
   setProgram(who: BodyID, member: string, input: { brief?: string; plan?: unknown }): Program {
@@ -794,7 +825,7 @@ export class Training {
       window: { start, end },
       trainerOnline: this.link.isOnline(TRAINER),
       trainerStatus: this.status(),
-      members: TRAINEES.map((member) => {
+      members: trainees().map((member) => {
         const sessions = this.sessions(member, 14);
         const program = this.program(member);
         return {

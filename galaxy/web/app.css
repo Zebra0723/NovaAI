@@ -27,7 +27,9 @@
   --ink-2: #57534c;
   --ink-3: #8a857c;
 
+  /* #owner */
   --comet: #d97706;
+  /* #end */
   --orbit: #dc2626;
   --nova: #6d4aff;
   --nebula: #059669;
@@ -72,7 +74,9 @@ svg { display: block; }
 }
 
 [data-body] { --c: var(--other); }
+/* #owner */
 [data-body="comet"] { --c: var(--comet); }
+/* #end */
 [data-body="orbit"] { --c: var(--orbit); }
 [data-body="nova"] { --c: var(--nova); }
 [data-body="nebula"] { --c: var(--nebula); }
@@ -923,6 +927,7 @@ kbd { font: 400 11px var(--mono); padding: 1px 6px; border-radius: 5px; border: 
 .lessons.compact li { grid-template-columns: 24px minmax(0, 1fr); padding: 7px 0; }
 .lessons.compact p { font-size: 12.5px; }
 
+/* #owner */
 /* ------------------------------------------------------------ Galaxy Teach */
 :root { --teach: #4d7c0f; }
 [data-body="teach"] { --c: var(--teach); }
@@ -1082,3 +1087,23 @@ code { font: 400 .92em var(--mono); background: var(--paper-2); padding: 1px 5px
 .builds-on .label { margin-right: 4px; }
 .builds-on a.chip { text-decoration: none; }
 .builds-on a.chip:hover { background: color-mix(in srgb, var(--teach) 14%, #fff); }
+/* #end */
+
+/* The consumer edition's sign-in, and who's signed in. */
+.gate { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: var(--paper); overflow: auto; padding: 40px 16px; }
+.gate-card { width: min(420px, 100%); text-align: center; animation: enter .5s var(--ease) both; }
+.gate-mark { width: 64px; height: 64px; margin: 0 auto; color: var(--ink); }
+.gate h1 { margin: 26px 0 10px; font: 400 46px/1.02 var(--serif); letter-spacing: -.02em; }
+.gate h1 em { color: var(--nova); }
+.gate-sub { margin: 0 auto 26px; color: var(--ink-2); font-size: 14.5px; line-height: 1.6; max-width: 36ch; }
+.gate form { display: grid; gap: 12px; text-align: left; }
+.gate label { display: grid; gap: 6px; font: 500 10.5px var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); }
+.gate input { height: 42px; border: 1px solid var(--rule); border-radius: 11px; padding: 0 13px; font: 400 15px var(--sans); color: var(--ink); background: #fff; outline: 0; text-transform: none; letter-spacing: 0; user-select: text; -webkit-user-select: text; }
+.gate input:focus { border-color: color-mix(in srgb, var(--nova) 45%, var(--rule)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--nova) 8%, transparent); }
+.gate .btn.big { height: 44px; justify-content: center; margin-top: 6px; }
+.gate-note { margin: 16px 0 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+.gate-note.bad, .gate .bad { color: var(--bad); }
+.gate-switch { margin: 22px 0 0; font-size: 13.5px; color: var(--ink-3); }
+.gate-switch a { color: var(--ink); }
+.account-chip { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--rule); border-radius: 12px; background: #fff; }
+.account-chip .who-email { font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

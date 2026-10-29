@@ -4,27 +4,39 @@ import { LUCIDE } from "./lucide.js";
 // image files to keep in step and every mark takes its member's colour.
 
 export const MEMBERS = {
+  // #owner
   comet: { name: "Comet", sense: "Text", role: "iMessage, wherever you are" },
+  // #end
   orbit: { name: "Orbit", sense: "Voice", role: "Speaks only when spoken to" },
   nova: { name: "Nova", sense: "Sight", role: "On your screen, one ⌃Space away" },
   nebula: { name: "Nebula", sense: "Touch", role: "Gestures, on your Mac" },
   zenith: { name: "Zenith", sense: "Time", role: "Commands the long missions" },
   trainer: { name: "Trainer", sense: "Practice", role: "Twelve minutes a day with every member" },
   medic: { name: "Medic", sense: "Health", role: "Keeps every member running" },
+  // #owner
   teach: { name: "Teach", sense: "Learning", role: "Lessons on what comes up while you work" },
+  // #end
   link: { name: "Galaxy Link", sense: "Hub", role: "Where the members meet" },
 };
+// #owner
 export const ORDER = ["comet", "orbit", "nova", "nebula", "zenith"];
+// #consumer export const ORDER = ["orbit", "nova", "nebula", "zenith"];
+// #end
 /** The member colours as plain values, for SVG attributes (which can't read CSS variables). */
+// #owner
 export const HEX = { comet: "#d97706", orbit: "#dc2626", nova: "#6d4aff", nebula: "#059669", zenith: "#2563eb", trainer: "#be185d", medic: "#0e7490", teach: "#4d7c0f", link: "#141413", you: "#1c1917" };
+// #consumer export const HEX = { orbit: "#dc2626", nova: "#6d4aff", nebula: "#059669", zenith: "#2563eb", trainer: "#be185d", medic: "#0e7490", link: "#141413", you: "#1c1917" };
+// #end
 export const hex = (id) => HEX[id] ?? "#78716c";
 
 const GLYPHS = {
+  // #owner
   // A head with a tapering tail.
   comet: `<circle cx="16.2" cy="7.8" r="3.4" fill="currentColor"/>
     <path d="M13.6 10.4 4 20" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
     <path d="M12.6 7.6 6.2 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".45"/>
     <path d="M16.4 11.6 10 18" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".45"/>`,
+  // #end
   // Orbit's own mark: a ring with one body on it.
   orbit: `<path d="M15.57 5.89A7.6 7.6 0 1 1 8.43 5.89" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/>
     <circle cx="12" cy="5" r="2.2" fill="currentColor"/>`,
@@ -47,10 +59,12 @@ const GLYPHS = {
   // A heart and its beat.
   medic: `<path d="M12 20.2s-7.4-4.4-7.4-10a4.1 4.1 0 0 1 7.4-2.4 4.1 4.1 0 0 1 7.4 2.4c0 5.6-7.4 10-7.4 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
     <path d="M7.6 12.2h2.2l1.2-2.4 2 4.6 1.3-2.2h2.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+  // #owner
   // An open book with a spark over it: something new, learnt.
   teach: `<path d="M12 8.6c-1.9-1.4-4.6-1.9-7.6-1.6v11c3-.3 5.7.2 7.6 1.6 1.9-1.4 4.6-1.9 7.6-1.6V7c-3-.3-5.7.2-7.6 1.6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/>
     <path d="M12 8.6v11" stroke="currentColor" stroke-width="1.5" opacity=".55"/>
     <path d="M12 2.2l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7Z" fill="currentColor"/>`,
+  // #end
   // Link: the hub, as on the map.
   link: `<circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.6" fill="none" opacity=".45"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/>`,
   you: `<circle cx="12" cy="8.6" r="3.6" fill="currentColor"/>

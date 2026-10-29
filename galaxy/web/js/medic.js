@@ -6,8 +6,15 @@ import { avatar, hex, icon, MEMBERS } from "./marks.js";
 import { poke, state } from "./state.js";
 import { ago, clock, esc, toast } from "./util.js";
 
+// #owner
 const ORDER = ["link", "comet", "nova", "nebula", "zenith", "trainer", "teach", "orbit"];
+// #consumer const ORDER = ["link", "nova", "nebula", "zenith", "trainer", "orbit"];
+// #end
 const LABEL = { healthy: "Healthy", recovering: "Recovering", needs_you: "Needs you", off: "Off", unknown: "Checking" };
+// #owner
+const RESTART_WONT_HELP = "a sign-in, a port taken by something else, Comet on its own Mac user, a member frozen mid-task.";
+// #consumer const RESTART_WONT_HELP = "a sign-in, a port taken by something else, a member frozen mid-task.";
+// #end
 const nameOf = (id) => MEMBERS[id]?.name ?? id.charAt(0).toUpperCase() + id.slice(1);
 
 function vitals() {
@@ -108,7 +115,7 @@ const medic = {
           <ol class="card steps medic-steps">
             <li><span class="n">${icon("refresh")}</span><div><b>Restarts</b><p>Galaxy Link, Zenith and the Trainer when they stop, after a second look to be sure.</p></div></li>
             <li><span class="n">${icon("shield")}</span><div><b>Reopens</b><p>Nova and Nebula when they crash. An app you quit stays quit, and Orbit is never started.</p></div></li>
-            <li><span class="n">${icon("alert")}</span><div><b>Tells you</b><p>When a restart won't help: a sign-in, a port taken by something else, Comet on its own Mac user, a member frozen mid-task. Once, with the exact fix.</p></div></li>
+            <li><span class="n">${icon("alert")}</span><div><b>Tells you</b><p>When a restart won't help: ${RESTART_WONT_HELP} Once, with the exact fix.</p></div></li>
             <li><span class="n">${icon("wrench")}</span><div><b>Stops</b><p>Restarting anything that crashes three times in fifteen minutes. Instead, Claude reads its log and tells you in plain words what's wrong.</p></div></li>
           </ol>
         </div>

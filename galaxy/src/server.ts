@@ -6,12 +6,15 @@ import { timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, sep } from "node:path";
 import { Link, LinkError } from "./link";
+import { isConsumer } from "./edition";
 import { MedicError } from "./medicine";
+// #owner
 import { TeachError } from "./teach";
+// #end
 import { TrainingError } from "./training";
 
 /** The Galaxy Link app's pages, served at /. */
-export const WEB_ROOT = join(import.meta.dir, "..", "web");
+export const WEB_ROOT = process.env.GALAXY_WEB || join(import.meta.dir, "..", "web");
 const STARTED_AT = Date.now();
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -46,14 +49,22 @@ export async function handle(link: Link, token: string, req: Request): Promise<R
   try {
     return await route(link, token, req);
   } catch (error) {
-    if (error instanceof LinkError || error instanceof TrainingError || error instanceof MedicError || error instanceof TeachError) return json({ error: error.message }, error.status);
+    if (error instanceof LinkError || error instanceof TrainingError || error instanceof MedicError) return json({ error: error.message }, error.status);
+    // #owner
+    if (error instanceof TeachError) return json({ error: error.message }, error.status);
+    // #end
     if (error instanceof SyntaxError) return json({ error: "that isn't JSON" }, 400);
     console.error("galaxyd:", error);
     return json({ error: "something went wrong in Link" }, 500);
   }
 }
 
-async function route(link: Link, token: string, req: Request): Promise<Response> {
+/**
+ * Everything every request must pass before it reaches Link: the right host, no other
+ * web page, and the token. Pages and the health check need no token. Returns the
+ * answer to send instead, or null to go on.
+ */
+export function gate(req: Request, token: string): Response | null {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method;
@@ -78,6 +89,15 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
   if (!sameToken(req.headers.get("authorization") ?? "", `Bearer ${token}`)) {
     return json({ error: "missing or wrong token" }, 401);
   }
+  return null;
+}
+
+async function route(link: Link, token: string, req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const path = url.pathname;
+  const method = req.method;
+  const stop = gate(req, token);
+  if (stop) return stop;
   const body = (req.headers.get("x-galaxy-body") ?? "").toLowerCase();
   const needBody = () => {
     if (!/^[a-z][a-z0-9-]{1,31}$/.test(body)) throw new LinkError(400, "say which body you are in X-Galaxy-Body");
@@ -201,7 +221,9 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     return json(link.say(who, "message", String(text ?? "")), 201);
   }
 
+  // #owner
   // ------------------------------------------------------------------ teach
+  if (path.startsWith("/v1/teach") && isConsumer()) throw new LinkError(404, "not here");
   const teach = link.teach;
   if (path === "/v1/teach" && method === "GET") {
     await teach.waitForChange(Number(url.searchParams.get("since") ?? 0) || 0, url.searchParams.has("since") ? wait() : 0);
@@ -254,6 +276,7 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     if (part === "checks" && method === "POST") return json(teach.askCheck(needBody(), lid, await input()), 201);
   }
 
+  // #end
   // ------------------------------------------------------------------ medic
   const medicine = link.medicine;
   if (path === "/v1/medic" && method === "GET") return json(medicine.overview());
@@ -376,7 +399,7 @@ function page(path: string): Response {
   });
 }
 
-function json(value: unknown, status = 200): Response {
+export function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 }
 

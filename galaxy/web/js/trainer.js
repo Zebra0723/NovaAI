@@ -7,7 +7,14 @@ import { avatar, glyph, hex, icon, MEMBERS } from "./marks.js";
 import { focusTraining, newThreadIDs, poke, state } from "./state.js";
 import { $, ago, clock, dayLabel, esc, nameOf, richText, toast } from "./util.js";
 
+// #owner
+const SIGN_IN_HOW = "Sign it in to Claude the way Comet is: run <code>galaxy login</code> in Terminal.";
+// #consumer const SIGN_IN_HOW = "Sign in again from the account menu at the bottom left.";
+// #end
+// #owner
 export const TRAINEES = ["comet", "orbit", "nova", "nebula", "zenith"];
+// #consumer export const TRAINEES = ["orbit", "nova", "nebula", "zenith"];
+// #end
 const MINUTES = () => state.training?.minutesPerDay ?? 12;
 /** A member's overnight minutes: twelve, or twenty-four for Nebula. */
 const BUDGET = (id) => memberOf(id)?.budget ?? (id === "nebula" ? 24 : MINUTES());
@@ -131,7 +138,7 @@ function alertHTML() {
   const st = state.training?.trainerStatus;
   if (!st || st.ok) return "";
   return `<div class="t-alert">${icon("x")}<div><b>The trainer can't reach Claude Code, so no session can run.</b><p>${esc(st.reason || "No reason given.")}</p>
-    <p class="muted">Sign it in to Claude the way Comet is: run <code>galaxy login</code> in Terminal. Checked ${esc(ago(st.at))}.</p></div></div>`;
+    <p class="muted">${SIGN_IN_HOW} Checked ${esc(ago(st.at))}.</p></div></div>`;
 }
 
 // ------------------------------------------------------------------ overview

@@ -17,7 +17,10 @@ import type { Link } from "./link";
 import type { BodyID, Store } from "./store";
 import type { TrainingPlan } from "./training";
 
+// #owner
 export const CASE_MEMBERS = ["comet", "orbit", "nova", "nebula", "zenith"];
+// #consumer export const CASE_MEMBERS = ["orbit", "nova", "nebula", "zenith"];
+// #end
 const DAY = 86_400_000;
 
 export type Verdict = "verified" | "unverified" | "contradicted";

@@ -6,9 +6,16 @@ import { $, ago, esc } from "./util.js";
 import { closeDrawer, VIEWS as LINK_VIEWS } from "./views.js";
 import { TRAINEES, TRAINER_VIEWS, traineeRow } from "./trainer.js";
 import { MEDIC_VIEWS } from "./medic.js";
+// #owner
 import { TEACH_VIEWS } from "./teach.js";
+// #consumer import { accountGate, mountAccountChip } from "./account.js";
+// #end
 
+// #owner
 const VIEWS = { ...LINK_VIEWS, ...TRAINER_VIEWS, ...MEDIC_VIEWS, ...TEACH_VIEWS };
+// #consumer const VIEWS = { ...LINK_VIEWS, ...TRAINER_VIEWS, ...MEDIC_VIEWS };
+// #consumer await accountGate();
+// #end
 import { closePalette, openPalette } from "./palette.js";
 
 const NAV = [
@@ -21,16 +28,28 @@ const NAV = [
   ["activity", "Activity"],
   ["system", "System"],
 ];
+// #owner
 const SPACES = [["trainer", "Trainer"], ["medic", "Medic"], ["teach", "Teach"]];
+// #consumer const SPACES = [["trainer", "Trainer"], ["medic", "Medic"]];
+// #end
+// #owner
 const ICON_FOR = { trainer: "trainer", medic: "medic", teach: "teach", overview: "overview", chat: "chat", map: "map", handoffs: "handoffs", approvals: "approvals", memory: "memory", activity: "activity", system: "system" };
+// #consumer const ICON_FOR = { trainer: "trainer", medic: "medic", overview: "overview", chat: "chat", map: "map", handoffs: "handoffs", approvals: "approvals", memory: "memory", activity: "activity", system: "system" };
+// #end
 
 /** Galaxy Trainer.app opens this same page as ?space=trainer: the Trainer's space on its own. */
+// #owner
 const TRAINER_APP = new URLSearchParams(location.search).get("space") === "trainer";
 if (TRAINER_APP) document.documentElement.classList.add("trainer-app");
 /** Galaxy Teach.app: the same page as ?space=teach, Teach's space on its own. */
 const TEACH_APP = new URLSearchParams(location.search).get("space") === "teach";
 if (TEACH_APP) document.documentElement.classList.add("trainer-app", "teach-app");
 const APP = TRAINER_APP ? "Galaxy Trainer" : TEACH_APP ? "Galaxy Teach" : "Galaxy Link";
+// #consumer // Trainer and Medic live inside Galaxy Link here: no apps of their own.
+// #consumer const TRAINER_APP = false;
+// #consumer const TEACH_APP = false;
+// #consumer const APP = "Galaxy Link";
+// #end
 
 const LINK_SIDEBAR = `
       <div class="brand">${brandMark()}<div><div class="brand-name">Galaxy Link</div><div class="brand-sub">GalaxyAI · hub</div></div></div>
@@ -51,11 +70,14 @@ const TRAINER_SIDEBAR = `
       <div class="nav-label"><span>Trainees</span><span id="roster-count"></span></div>
       <div class="roster trainee-roster" id="roster"></div>`;
 
+// #owner
 const TEACH_SIDEBAR = `
       <div class="brand">${avatar("teach", "brand-avatar")}<div><div class="brand-name">Galaxy Teach</div><div class="brand-sub">GalaxyAI · tutor</div></div></div>
       <nav class="nav" id="nav"><a href="#/teach" data-nav="teach">${icon("book")}<span>Lessons</span><span class="count live-count" hidden></span></a></nav>
       <div class="nav-label"><span>Lately</span></div>
       <div class="roster teach-roster" id="roster"></div>`;
+// #consumer const TEACH_SIDEBAR = "";
+// #end
 
 document.body.innerHTML = `
   <div class="backdrop"></div>
@@ -69,6 +91,10 @@ document.body.innerHTML = `
     </main>
   </div>`;
 
+// #owner
+const AWAY_LINE = "Results to your phone";
+// #consumer const AWAY_LINE = "Results wait on screen";
+// #end
 let current = null;
 const clockNow = () => new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 setInterval(() => {
@@ -80,7 +106,9 @@ setInterval(() => {
 function currentRoute() {
   const [id, param = "", sub = ""] = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
   if (id === "trainer" && param) return ["training", param];
+  // #owner
   if (id === "teach" && param === "lesson" && sub) return ["lesson", sub];
+  // #end
   if (TEACH_APP) return ["teach", ""];
   if (TRAINER_APP) return ["trainer", ""];
   return VIEWS[id] ? [id, param] : ["overview", ""];
@@ -107,12 +135,14 @@ function show() {
 const CRUMB = { overview: "Overview", chat: "Galaxy Chat", map: "Galaxy Map", handoffs: "Handoffs", approvals: "Approvals", memory: "Memory", activity: "Activity", system: "System", trainer: "Trainer", medic: "Medic", teach: "Teach" };
 function drawCrumb() {
   const name = esc(param.charAt(0).toUpperCase() + param.slice(1));
+  // #owner
   if (current === "lesson" || (TEACH_APP && current === "teach")) {
     const title = current === "lesson" ? esc(state.teach?.lessons?.find((l) => l.id === param)?.title ?? "Lesson") : "";
     const root = TEACH_APP ? `<a href="#/teach">Galaxy Teach</a>` : `<span>Galaxy Link</span><span class="sep">/</span><a href="#/teach">Teach</a>`;
     $("#crumb").innerHTML = current === "lesson" ? `${root}<span class="sep">/</span><b>${title}</b>` : `<span>Galaxy Teach</span><span class="sep">/</span><b>Lessons</b>`;
     return;
   }
+  // #end
   if (TRAINER_APP) {
     $("#crumb").innerHTML =
       current === "training"
@@ -148,13 +178,19 @@ function chrome() {
     liveBadge.hidden = !live;
     liveBadge.textContent = live ? "Live" : "";
   }
+  // #owner
   const offers = state.teach?.offers?.length ?? 0;
   const teachBadge = $('[data-nav="teach"] .count');
   if (teachBadge) {
     teachBadge.hidden = !offers;
     teachBadge.textContent = offers ? `${offers} new` : "";
   }
+  // #end
+  // #owner
   const order = ["comet", "orbit", "nova", "nebula", "zenith"];
+  // #consumer const order = ["orbit", "nova", "nebula", "zenith"];
+  // #end
+  // #owner
   if (TEACH_APP) {
     const recent = (state.teach?.lessons ?? []).filter((l) => l.status !== "failed").slice(0, 8);
     $("#roster").innerHTML = recent.length
@@ -162,7 +198,9 @@ function chrome() {
           .map((l) => `<a class="who${current === "lesson" && param === l.id ? " on" : ""}" href="#/teach/lesson/${l.id}" data-body="teach"><span class="nm">${esc(l.title.replace(/`/g, ""))}</span><span class="state">${l.status === "done" ? `${l.score ?? "—"}` : l.position ? "going" : l.saved ? "saved" : l.status === "writing" ? "writing" : "new"}</span></a>`)
           .join("")
       : `<div class="muted small" style="padding:6px 12px">Your lessons show up here.</div>`;
-  } else if (TRAINER_APP) {
+  } else
+  // #end
+  if (TRAINER_APP) {
     $("#roster").innerHTML = TRAINEES.map((id) => traineeRow(id, current === "training" && param === id)).join("");
     const done = (state.training?.members ?? []).filter((m) => m.minutesToday >= (state.training?.minutesPerDay ?? 12) - 1).length;
     $("#roster-count").textContent = state.training ? `${done}/${TRAINEES.length} done` : "";
@@ -183,7 +221,7 @@ function chrome() {
 
   const atMac = o?.presence?.atMac;
   $("#presence").innerHTML = o
-    ? `<span class="avatar sm" data-body="you">${glyph("you")}</span><div><b>${atMac ? "At the Mac" : "Away"}</b><span>${atMac ? "Results on screen" : "Results to your phone"}</span></div><time id="clock">${clockNow()}</time>`
+    ? `<span class="avatar sm" data-body="you">${glyph("you")}</span><div><b>${atMac ? "At the Mac" : "Away"}</b><span>${atMac ? "Results on screen" : AWAY_LINE}</span></div><time id="clock">${clockNow()}</time>`
     : "";
 
   const link = $("#link-state");
@@ -262,6 +300,9 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// #owner
+// #consumer mountAccountChip();
+// #end
 show();
 chrome();
 start();

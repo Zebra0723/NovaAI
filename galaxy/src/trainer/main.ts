@@ -10,7 +10,7 @@
 // still never over real work.
 
 import { GalaxyLink, type LinkInboxItem } from "../client";
-import { budgetFor, inWindow, localDay, TEST_MINUTES, TRAINEES } from "../training";
+import { budgetFor, inWindow, localDay, TEST_MINUTES, trainees } from "../training";
 import { Coach } from "./coach";
 import { claudeThink } from "./think";
 
@@ -96,7 +96,7 @@ async function nightly() {
 
 async function onInbox(item: LinkInboxItem) {
   const member = /^train:([a-z][a-z0-9-]{1,31})$/.exec(item.text.trim())?.[1];
-  if (member && TRAINEES.includes(member) && !queued(member)) {
+  if (member && trainees().includes(member) && !queued(member)) {
     // Tests go to the front: you're watching.
     queue.unshift({ member, trigger: "test" });
     void drain();

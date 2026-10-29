@@ -90,6 +90,7 @@ export class Medic {
         if (o.body && !o.body.online && o.body.lastSeen && now - o.body.lastSeen < SILENT_MS) o.body.online = true;
       }
       if (spec.log) o.logTail = sys.tail(spec.log, 40);
+      // #owner
       if (spec.id === "comet") {
         const h = await sys.http("http://127.0.0.1:8787/health", 3000);
         try {
@@ -102,6 +103,7 @@ export class Medic {
         const me = (await sys.sh("id -un")).out.trim();
         if (owner.out.trim() && owner.out.trim() !== me) o.cometUser = owner.out.trim();
       }
+      // #end
       if (spec.id === "trainer") o.trainerStatus = training?.trainerStatus ?? null;
       o.stuck = claimed
         .filter((t) => t.to === spec.id && now - (t.updatedAt ?? now) > STUCK_MINUTES * 60_000)

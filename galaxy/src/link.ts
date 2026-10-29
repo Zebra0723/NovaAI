@@ -7,8 +7,11 @@
 
 import { spawn } from "node:child_process";
 import { PresenceReader } from "./presence";
+import { exists, isConsumer } from "./edition";
 import { Medicine } from "./medicine";
+// #owner
 import { Teach } from "./teach";
+// #end
 import { Training } from "./training";
 import { Store, type Approval, type Body, type BodyID, type ChatMessage, type InboxItem, type Task } from "./store";
 
@@ -37,7 +40,8 @@ export interface BodyProfile {
  * launched, never handed work it didn't ask for, and never sent a result to
  * speak: it only talks when someone talks to it.
  */
-export const PROFILES: Record<BodyID, BodyProfile> = {
+const ALL_PROFILES: Record<BodyID, BodyProfile> = {
+  // #owner
   comet: {
     name: "Comet",
     powers: ["imessage", "reach_phone", "build_web", "cad", "code", "research", "files"],
@@ -60,6 +64,7 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     ],
     notFor: "anything that has to happen on the Mac's own screen or in its apps (that's Nova)",
   },
+  // #end
   nova: {
     name: "Nova",
     powers: ["screen", "mac_apps", "shell"],
@@ -78,7 +83,10 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
       "screenshots, and reading what's on screen",
       "changing a Mac setting or using an app like Photos, Mail or Calendar",
     ],
+    // #owner
     notFor: "work that takes hours (that's Zenith), or reaching the human away from the Mac (that's Comet)",
+    // #consumer notFor: "work that takes hours (that's Zenith)",
+    // #end
   },
   orbit: {
     name: "Orbit",
@@ -108,7 +116,10 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
       "I'm Zenith, the commander. I take on the big missions, the ones with many steps that take hours. I work on " +
       "this Mac through Claude Code, inside a walled-off folder for each mission (~/Galaxy/Missions), one mission " +
       "at a time. I ask the human before spending money or posting anything in public, and when I finish, the " +
+      // #owner
       "result goes to them the usual way: on screen if they're at the Mac, by text through Comet if not.",
+      // #consumer "result waits for them on screen, with Nova.",
+      // #end
     sendMe: [
       "projects with many steps: building an app, a full research report, a big reorganisation",
       "anything the human says to \"make a mission\" of",
@@ -147,6 +158,7 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     sendMe: [],
     notFor: "work of any kind: I keep you running, I don't take tasks",
   },
+  // #owner
   // For the human, not the members: it teaches you what comes up while you work.
   teach: {
     name: "Teach",
@@ -163,6 +175,7 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     sendMe: [],
     notFor: "work of any kind: I teach our human, I don't take tasks",
   },
+  // #end
   nebula: {
     name: "Nebula",
     powers: ["gestures", "approvals"],
@@ -179,6 +192,14 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     notFor: "tasks: I don't do work myself, I'm how the human's hands reach the rest of you",
   },
 };
+
+/** Every member this edition has, as it should describe itself. */
+export function profiles(): Record<BodyID, BodyProfile> {
+  if (!isConsumer()) return ALL_PROFILES;
+  const out: Record<BodyID, BodyProfile> = {};
+  for (const [id, p] of Object.entries(ALL_PROFILES)) if (exists(id)) out[id] = p;
+  return out;
+}
 
 /** How long an approval waits for an answer unless the asker says otherwise. */
 export const APPROVAL_TTL_MS = 120_000;
@@ -217,7 +238,9 @@ export class Link {
   launcher: (command: string) => void = defaultLauncher;
   readonly training: Training;
   readonly medicine: Medicine;
+  // #owner
   readonly teach: Teach;
+  // #end
 
   constructor(
     readonly store: Store,
@@ -225,17 +248,20 @@ export class Link {
   ) {
     this.training = new Training(this, store);
     this.medicine = new Medicine(this, store);
+    // #owner
     this.teach = new Teach(this, store);
+    // #end
   }
 
   // ------------------------------------------------------------------ bodies
 
   profile(id: BodyID): BodyProfile {
-    return PROFILES[id] ?? { name: id, powers: [], surface: "none", launch: "", intro: "" };
+    return profiles()[id] ?? { name: id, powers: [], surface: "none", launch: "", intro: "" };
   }
 
   hello(id: BodyID, info: { name?: string; powers?: string[]; version?: string; intro?: string }): BodyView {
     if (!/^[a-z][a-z0-9-]{1,31}$/.test(id)) throw new LinkError(400, "body ids are lowercase words");
+    if (!exists(id)) throw new LinkError(404, "there's no member by that name in this Galaxy");
     const profile = this.profile(id);
     const powers = [...new Set([...profile.powers, ...(info.powers ?? [])])].filter((p) => /^[a-z_]{2,32}$/.test(p));
     this.store.upsertBody({
@@ -300,11 +326,11 @@ export class Link {
     if (to) {
       if (to === from) throw new LinkError(400, "a body can't hand work to itself");
       if (to === "orbit") throw new LinkError(400, "Orbit only speaks when spoken to; it doesn't take handoffs");
-      if (!this.store.body(to) && !PROFILES[to]) throw new LinkError(404, `no body called ${to}`);
+      if (!this.store.body(to) && !profiles()[to]) throw new LinkError(404, `no body called ${to}`);
       return to;
     }
     const known = new Map<BodyID, string[]>();
-    for (const [id, p] of Object.entries(PROFILES)) known.set(id, p.powers);
+    for (const [id, p] of Object.entries(profiles())) known.set(id, p.powers);
     for (const b of this.store.bodies()) known.set(b.id, b.powers);
     const able = [...known]
       .filter(([id, powers]) => id !== from && id !== "orbit" && powers.includes(power))
@@ -428,8 +454,13 @@ export class Link {
     if (surface === "phone") return preferred;
     if (surface === "screen" && atMac && this.isOnline(preferred)) return preferred;
     if (atMac && this.isOnline("nova")) return "nova";
+    // #owner
+    // No phone in the consumer edition: it waits with Nova for when they're back.
+    if (isConsumer()) return "nova";
     // Comet's queue holds it until Comet is back, and Comet reaches your phone.
     return "comet";
+    // #consumer return "nova";
+    // #end
   }
 
   private deliverResult(task: Task) {
@@ -603,7 +634,7 @@ export class Link {
    */
   overview(startedAt: number) {
     const registered = new Map(this.store.bodies().map((b) => [b.id, b]));
-    const ids = [...new Set([...Object.keys(PROFILES), ...registered.keys()])];
+    const ids = [...new Set([...Object.keys(profiles()), ...registered.keys()])];
     const working = this.store.tasks({ status: "claimed" }, 50);
     const bodies = ids.map((id) => {
       const profile = this.profile(id);
@@ -643,7 +674,10 @@ export class Link {
 
   /** Members in a fixed order: the five installments first, then anyone newer. */
   private members(): Body[] {
+    // #owner
     const order = ["comet", "orbit", "nova", "nebula", "zenith", "trainer", "medic"];
+    // #consumer const order = ["orbit", "nova", "nebula", "zenith", "trainer", "medic"];
+    // #end
     const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
     return this.store
       .bodies()
@@ -695,7 +729,9 @@ export class Link {
 
   private handoffLine(to: BodyID): string {
     switch (to) {
+      // #owner
       case "comet": return "I'll send you anything that has to reach the human away from the Mac, and anything to build.";
+      // #end
       case "nova": return "anything that has to happen on the Mac itself is yours.";
       case "zenith": return "the long missions go to you.";
       case "nebula": return "I'll ask the human through you when a quick yes or no will do.";
@@ -770,7 +806,7 @@ export class Link {
    * One block of text a body can put in its system prompt: what the
    * assistant knows about you, what its other bodies have been doing, and
    * which of them are running. This is what makes it one assistant: ask
-   * Nova about the site Comet built this morning and Nova knows.
+   * Nova about the site Zenith built this morning and Nova knows.
    */
   promptContext(forBody: BodyID, opts: { memoryLimit?: number; hours?: number } = {}): string {
     const memories = this.store.memories("", opts.memoryLimit ?? 60);

@@ -72,7 +72,10 @@ interface Turn {
   text: string;
 }
 
+// #owner
 const NAMES: Record<string, string> = { comet: "Comet", orbit: "Orbit", nova: "Nova", nebula: "Nebula", zenith: "Zenith" };
+// #consumer const NAMES: Record<string, string> = { orbit: "Orbit", nova: "Nova", nebula: "Nebula", zenith: "Zenith" };
+// #end
 const nameOf = (id: string) => NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
 const THINK_MS = 180_000;
 const SHORT_THINK_MS = 120_000;

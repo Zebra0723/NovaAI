@@ -3,9 +3,8 @@
 //
 // The rule for acting alone: only what you'd do yourself without thinking. Restart a
 // background service that stopped; reopen an app that crashed (never one you quit);
-// bring Link back. Anything else (a sign-in, a port taken by something else, Comet's
-// separate Mac user, a member that's frozen mid-task) Medic tells you about, once,
-// with the exact thing to run.
+// bring Link back. Anything else (a sign-in, a port taken by something else, a member
+// that's frozen mid-task) Medic tells you about, once, with the exact thing to run.
 
 export interface Spec {
   id: string;
@@ -21,6 +20,7 @@ export interface Spec {
 }
 
 export function specs(home: string, galaxyHome: string): Spec[] {
+  // #owner
   return [
     { id: "link", name: "Galaxy Link", label: "ai.galaxy.link", log: `${galaxyHome}/galaxyd.log` },
     { id: "comet", name: "Comet" },
@@ -31,6 +31,16 @@ export function specs(home: string, galaxyHome: string): Spec[] {
     { id: "teach", name: "Teach", label: "ai.galaxy.teach", log: `${galaxyHome}/teach.log` },
     { id: "orbit", name: "Orbit", optional: true },
   ];
+
+  // #consumer return [
+  // #consumer   { id: "link", name: "Galaxy Link", label: "ai.galaxy.consumer.link", log: `${galaxyHome}/galaxyd.log` },
+  // #consumer   { id: "nova", name: "Nova", app: { process: "Nova", bundle: "ai.galaxy.consumer.nova" } },
+  // #consumer   { id: "nebula", name: "Nebula", app: { process: "Nebula", bundle: "ai.galaxy.consumer.nebula" } },
+  // #consumer   { id: "zenith", name: "Zenith", label: "ai.galaxy.consumer.zenith", log: `${galaxyHome}/zenith.log` },
+  // #consumer   { id: "trainer", name: "Trainer", label: "ai.galaxy.consumer.trainer", log: `${galaxyHome}/trainer.log` },
+  // #consumer   { id: "orbit", name: "Orbit", optional: true },
+  // #consumer ];
+  // #end
 }
 
 /** What Medic saw of one member in a checkup. */
@@ -45,12 +55,14 @@ export interface Observation {
   logTail?: string;
   /** Link only: does /v1/health answer? */
   answering?: boolean;
+  // #owner
   /** Comet only: its own server's health check (null = no answer). */
   cometHealth?: { relays: number } | null;
   /** Comet only: it's installed as a launchd job in your session. */
   cometLocal?: boolean;
   /** Comet only: the Mac user it runs as, when that isn't you. */
   cometUser?: string;
+  // #end
   /** Trainer only: can it reach Claude? */
   trainerStatus?: { ok: boolean; reason: string } | null;
   /** Work it claimed and has gone quiet on. */
@@ -128,6 +140,7 @@ export function examine(spec: Spec, o: Observation, restartsRecently: number): V
   // ---- Orbit: quit most of the time, by design.
   if (spec.optional) return o.body?.online ? fine("Running") : off("Quit, which is normal");
 
+  // #owner
   // ---- Comet: runs as its own Mac user, or as you.
   if (spec.id === "comet") {
     if (o.body?.online) {
@@ -155,6 +168,7 @@ export function examine(spec: Spec, o: Observation, restartsRecently: number): V
       problems: [{ key: "comet:down", kind: "crashed", title: "Comet isn't running, so texts aren't being answered", found: "Neither Galaxy Link nor Comet's own server has heard from it.", fix: o.cometUser ? `sudo pkill -u ${o.cometUser} -f "Available3/(server|relay)/src/index.ts"   (its login agent starts it again; if not, log in to that Mac user once)` : "cd ~/Available3 && ./scripts/install-launchd.sh" }],
     };
   }
+  // #end
 
   // ---- Mac apps: Nova, Nebula.
   if (spec.app) {

@@ -250,6 +250,15 @@ export class Store {
     return { memory: this.memory(id)!, created: true };
   }
 
+  /** A memory restored from your account, keeping its id. Nothing happens if it's already here. */
+  importMemory(m: { id: string; text: string; source: string; createdAt: number; updatedAt: number }) {
+    const clean = m.text.trim();
+    if (!clean || !/^[\w-]{1,40}$/.test(m.id)) return;
+    this.db
+      .query("insert or ignore into memories (id, text, norm, source, created_at, updated_at) values (?, ?, ?, ?, ?, ?)")
+      .run(m.id, clean, normalize(clean), m.source || "user", m.createdAt || this.now(), m.updatedAt || m.createdAt || this.now());
+  }
+
   memory(id: string): Memory | null {
     const row = this.db.query("select * from memories where id = ?").get(id) as any;
     return row ? rowToMemory(row) : null;

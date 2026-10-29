@@ -48,7 +48,10 @@ export function shortDate(ms) {
 export function richText(text) {
   let html = esc(text);
   html = html.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  // #owner
   html = html.replace(/@(Comet|Orbit|Nova|Nebula|Zenith)\b/g, (_, n) => `<span class="at" data-body="${n.toLowerCase()}">@${n}</span>`);
+  // #consumer html = html.replace(/@(Orbit|Nova|Nebula|Zenith)\b/g, (_, n) => `<span class="at" data-body="${n.toLowerCase()}">@${n}</span>`);
+  // #end
   html = html.replace(/^(Send me|Not for me):/gm, "<b>$1:</b>");
   return html;
 }

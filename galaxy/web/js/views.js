@@ -5,11 +5,20 @@ import { api } from "./api.js";
 import { avatar, glyph, hex, icon, MEMBERS, ORDER } from "./marks.js";
 import { newChatIDs, poke, state } from "./state.js";
 import { $, $$, ago, clock, dayLabel, esc, nameOf, richText, shortDate, toast } from "./util.js";
+// #owner
+const AWAY_PILL = "You're away · results to your phone";
+// #consumer const AWAY_PILL = "You're away · results wait for you on screen";
+const AWAY_RESULTS = "Your phone, through Comet";
+// #consumer const AWAY_RESULTS = "Waiting for you with Nova";
+// #end
 
 const bodiesInOrder = () => {
   const list = state.overview?.bodies ?? ORDER.map((id) => ({ id, name: MEMBERS[id].name, joined: false, online: false, powers: [] }));
   // The trainer has its own space; it isn't one of the members you see on the map.
+  // #owner
   return list.filter((b) => b.id !== "trainer" && b.id !== "medic" && b.id !== "teach").sort((a, b) => rank(a.id) - rank(b.id));
+  // #consumer return list.filter((b) => b.id !== "trainer" && b.id !== "medic").sort((a, b) => rank(a.id) - rank(b.id));
+  // #end
 };
 const rank = (id) => (ORDER.includes(id) ? ORDER.indexOf(id) : 99);
 const byId = (id) => bodiesInOrder().find((b) => b.id === id);
@@ -234,7 +243,7 @@ const overview = {
           <div class="story">${story()}</div>
           <div class="pills">
             <a class="pill" href="#/chat"><span class="lamp on" style="--c:var(--good)"></span>${running} of ${bodies.length} running</a>
-            <a class="pill" href="#/system">${o?.presence?.atMac ? "You're at the Mac · results on screen" : "You're away · results to your phone"}</a>
+            <a class="pill" href="#/system">${o?.presence?.atMac ? "You're at the Mac · results on screen" : AWAY_PILL}</a>
             ${pending.length ? `<a class="pill attention" href="#/approvals">${pending.length} waiting on you</a>` : ""}
           </div>
         </div>
@@ -813,7 +822,7 @@ const system = {
             <dt>Running since</dt><dd>${o ? esc(new Date(o.startedAt).toLocaleString()) : ""}</dd>
             <dt>Data</dt><dd class="mono">~/Library/Application Support/Galaxy</dd>
             <dt>Reachable from</dt><dd>This Mac only. Other web pages are refused.</dd>
-            <dt>Where results go</dt><dd>${o?.presence?.atMac ? "The screen, since you're at the Mac" : "Your phone, through Comet"}</dd>
+            <dt>Where results go</dt><dd>${o?.presence?.atMac ? "The screen, since you're at the Mac" : AWAY_RESULTS}</dd>
           </dl></div>
         <div class="card pad"><div class="section-head"><h2>Keyboard</h2></div>
           <div class="keys">
