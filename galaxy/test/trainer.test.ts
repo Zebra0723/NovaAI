@@ -67,7 +67,11 @@ function fakeThink(log: string[] = [], drills: any[] = [
     }
     if (prompt.includes("Rewrite")) {
       log.push("wrap");
-      return JSON.stringify({ playbook: ["Before texting someone new, get the owner's yes in their own words."], summary: "Solid routing; wording needs work." });
+      return JSON.stringify({
+        playbook: ["Before texting someone new, get the owner's yes in their own words."],
+        summary: "Solid routing; wording needs work.",
+        newScenarios: [{ title: "Tonight's slip, again", setup: "The owner texts: tell Sam and Priya I'm late." }],
+      });
     }
     return null;
   };
@@ -132,6 +136,9 @@ describe("a training session", () => {
     expect(change).toMatchObject({ speaker: "link" });
     expect(change.text).toContain("Program v1 → v2");
     expect(change.text).toContain("+ scenarios: New number");
+    // And the program changes again the moment the session ends, from what it showed.
+    expect(link.training.program("comet")!.plan.scenarios.some((x) => x.title === "Tonight's slip, again")).toBe(true);
+    expect(link.training.thread("comet").filter((m) => m.kind === "change").at(-1)!.text).toContain("Tonight's slip, again");
     expect(session?.trigger).toBe("night");
     expect(link.training.thread("comet").find((m) => m.kind === "answer")).toMatchObject({ speaker: "comet", rehearsal: true });
     expect(link.training.program("comet")!.plan.scenarios.some((s) => s.title === "New number")).toBe(true);

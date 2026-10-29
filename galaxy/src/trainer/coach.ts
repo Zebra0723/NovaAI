@@ -339,8 +339,22 @@ export class Coach {
   private async wrap(ctx: Ctx, l: Learnt): Promise<Session | null> {
     const { member, sid } = ctx;
     const thread = (await this.o.call<MemberDetail>("GET", `/v1/training/${member}`))?.thread.filter((m) => m.sessionId === sid) ?? [];
-    const wrapped = ctx.drills ? readJSON<{ playbook?: string[]; summary?: string }>(await this.think(wrapPrompt(nameOf(member), l.program, l.lessons, thread), THINK_MS)) : null;
+    const wrapped = ctx.drills
+      ? readJSON<{ playbook?: string[]; summary?: string; focus?: string[]; observations?: string[]; newScenarios?: TrainingPlan["scenarios"] }>(
+          await this.think(wrapPrompt(nameOf(member), l.program, l.lessons, thread), THINK_MS),
+        )
+      : null;
     if (wrapped?.playbook?.length) await this.o.call("PUT", `/v1/training/${member}/playbook`, { lessons: wrapped.playbook, sessionId: sid });
+    // The program changes now, from what this session showed, not only when the next one plans.
+    if (wrapped && (wrapped.focus?.length || wrapped.observations?.length || wrapped.newScenarios?.length)) {
+      const plan: TrainingPlan = {
+        ...l.program.plan,
+        focus: wrapped.focus?.length ? wrapped.focus : l.program.plan.focus,
+        observations: [...(wrapped.observations ?? []), ...l.program.plan.observations].slice(0, 20),
+        scenarios: [...l.program.plan.scenarios, ...(wrapped.newScenarios ?? [])],
+      };
+      l.program = (await this.o.call<Program>("PUT", `/v1/training/${member}/program`, { plan })) ?? l.program;
+    }
     const average = ctx.scores.length ? (ctx.scores.reduce((a, b) => a + b, 0) / ctx.scores.length) * 10 : null;
     const why = ctx.stopped || this.o.think.lastError || "";
     const summary =
@@ -597,5 +611,7 @@ Rewrite ${name}'s playbook: the rules it will read from now on. At most 12 lesso
 
 Then a summary for the human who oversees training: two or three sentences, plain, what improved, what still slips, what's next.
 
-Reply with JSON only: {"playbook": ["..."], "summary": "..."}`;
+Update the program from what tonight showed: the focus list (most important first, at most 6, aimed at what slipped), one or two observations about this member, and 1 to 3 new scenarios built from tonight's mistakes, so the next session drills them in a new form.
+
+Reply with JSON only: {"playbook": ["..."], "summary": "...", "focus": ["..."], "observations": ["..."], "newScenarios": [{"title": "...", "setup": "...", "good": "..."}]}`;
 }
