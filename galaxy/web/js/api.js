@@ -70,6 +70,10 @@ export const api = {
   trainingThreads: (after = 0, wait = 0) =>
     call("GET", `/v1/training/threads?after=${after}${wait ? `&wait=${wait}` : ""}`, undefined, { timeout: wait ? (wait + 10) * 1000 : 10_000 }),
   trainNow: (id) => call("POST", `/v1/training/${id}/train`, {}),
+  pauseSession: (sid) => call("POST", `/v1/training/sessions/${sid}/pause`, {}),
+  resumeSession: (sid) => call("POST", `/v1/training/sessions/${sid}/resume`, {}),
+  stopSession: (sid) => call("POST", `/v1/training/sessions/${sid}/stop`, {}),
+  removeSession: (sid) => call("DELETE", `/v1/training/sessions/${sid}`),
   noteToTrainer: (id, text) => call("POST", `/v1/training/${id}/thread`, { kind: "note", text }),
   setLesson: (id, active) => call("PATCH", `/v1/training/lessons/${id}`, { active }),
   introduce: () => call("POST", "/v1/introductions"),

@@ -149,6 +149,17 @@ link.requestApproval("zenith", { title: "Spend $12 on a domain for the tennis si
       "Ask before spending money or publishing; keep working on everything else while you wait.",
     ],
   };
+  // Comet's program and playbook as the trainer changed them over the week.
+  for (const [day, change] of [
+    [6, (p: any) => ({ ...p, focus: [...p.focus, "Answer a guest as themselves: never mention the owner's other plans."] })],
+    [3, (p: any) => ({ ...p, focus: p.focus.filter((f: string) => !f.startsWith("Texts a person")), observations: ["Asked which email to use every time this week.", ...p.observations] })],
+  ] as const) {
+    at(day * 1440 + 580);
+    t.setProgram("trainer", "comet", { plan: change(t.program("comet")!.plan) });
+  }
+  at(4 * 1440 + 570);
+  t.setPlaybook("trainer", "comet", playbooks.comet!.slice(0, 3));
+  at(1440 + 570);
   for (const [member, lessons] of Object.entries(playbooks)) t.setPlaybook("trainer", member, lessons);
 
   // Yesterday's finished session with Nova, in full.

@@ -19,10 +19,12 @@ const live = (id) => (memberOf(id)?.latest?.status === "running" ? memberOf(id).
 const showingTest = (id) => live(id)?.trigger === "test";
 const shownMinutes = (id) => {
   const s = live(id);
-  if (s) return Math.min(shownBudget(id), Math.max(0, Math.floor((Date.now() - s.startedAt) / 60_000)));
+  if (s) return Math.min(shownBudget(id), Math.max(0, Math.floor(activeMs(s) / 60_000)));
   const m = memberOf(id);
   return Math.min(shownBudget(id), m?.minutesToday ?? 0);
 };
+/** How long a session has really been training: paused time doesn't count. */
+const activeMs = (s) => (s.endedAt || Date.now()) - s.startedAt - (s.pausedMs ?? 0) - (s.pausedAt && !s.endedAt ? Date.now() - s.pausedAt : 0);
 /** Out of: twelve for a test session, else the member's overnight minutes. */
 const shownBudget = (id) => (showingTest(id) ? TEST() : BUDGET(id));
 const hour = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric" });
@@ -238,6 +240,8 @@ const trainer = {
 
 let tab = "playbook";
 let lastAside = "";
+/** The session whose remove button was pressed, waiting for you to confirm. */
+let asking = "";
 
 function threadHTML(id, list) {
   let html = "";
@@ -299,6 +303,53 @@ function threadHTML(id, list) {
   return html;
 }
 
+/** What's in `now` and not in `before`, and the other way round. */
+function diffList(before = [], now = []) {
+  const k = (t) => String(t).toLowerCase().replace(/\s+/g, " ").trim();
+  const was = new Set(before.map(k));
+  const is = new Set(now.map(k));
+  return { added: now.filter((t) => !was.has(k(t))), removed: before.filter((t) => !is.has(k(t))) };
+}
+
+function changeLines(label, d) {
+  return [...d.added.map((t) => `<li class="plus"><i>+</i><span><em>${label}</em>${esc(t)}</span></li>`), ...d.removed.map((t) => `<li class="minus"><i>−</i><span><em>${label}</em>${esc(t)}</span></li>`)].join("");
+}
+
+/** Every program and playbook the member has had, newest first, each with what changed from the one before. */
+function versionsHTML(id, h) {
+  if (!h || (!h.programs.length && !h.playbooks.length)) return `<div class="empty small">${icon("layers")}<b>No versions yet</b>Each time the trainer changes the program or the playbook, the old one is kept here.</div>`;
+  const programs = h.programs
+    .map((p, i) => {
+      const prev = h.programs[i + 1];
+      const title = (s) => s.title;
+      const lines = prev
+        ? changeLines("Focus", diffList(prev.plan.focus, p.plan.focus)) +
+          changeLines("Graded on", diffList(prev.plan.rubric, p.plan.rubric)) +
+          changeLines("Scenario", diffList(prev.plan.scenarios.map(title), p.plan.scenarios.map(title))) +
+          changeLines("Noticed", diffList(prev.plan.observations, p.plan.observations)) +
+          (prev.brief !== p.brief ? `<li class="plus"><i>~</i><span><em>Brief</em>rewritten</span></li>` : "")
+        : "";
+      return `<details class="version"${i === 0 ? " open" : ""}><summary><b>Program v${p.version}</b><span>${esc(dayLabel(p.at))} · ${esc(clock(p.at))}${i === 0 ? " · current" : ""}</span></summary>
+        ${prev ? (lines ? `<ul class="diff">${lines}</ul>` : `<p class="muted small">Same as v${prev.version}.</p>`) : `<p class="muted small">Where it started${p.version > 1 ? " (older versions weren't kept)" : ""}.</p>`}
+        <div class="label">Focus</div><ul class="ticks">${p.plan.focus.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
+      </details>`;
+    })
+    .join("");
+  const playbooks = h.playbooks
+    .map((b, i) => {
+      const prev = h.playbooks[i + 1];
+      const lines = changeLines("", diffList(prev?.lessons ?? [], b.lessons));
+      return `<details class="version"${i === 0 ? " open" : ""}><summary><b>Playbook #${b.n}</b><span>${esc(dayLabel(b.at))} · ${esc(clock(b.at))} · ${b.by === "you" ? "you" : "trainer"}${i === 0 ? " · current" : ""}</span></summary>
+        ${lines ? `<ul class="diff">${lines}</ul>` : `<p class="muted small">Same lessons as before.</p>`}
+        <div class="label">${b.lessons.length} lesson${b.lessons.length === 1 ? "" : "s"}</div><ol class="lessons compact">${b.lessons.map((l, j) => `<li><span class="n">${String(j + 1).padStart(2, "0")}</span><p>${esc(l)}</p></li>`).join("")}</ol>
+      </details>`;
+    })
+    .join("");
+  return `<p class="aside-note">Every version the trainer has written for ${esc(nameOf(id))}, newest first, with what changed from the one before.</p>
+    ${programs ? `<div class="label" style="margin-top:4px">Program</div><div class="versions">${programs}</div>` : ""}
+    ${playbooks ? `<div class="label" style="margin-top:18px">Playbook</div><div class="versions">${playbooks}</div>` : ""}`;
+}
+
 function asideHTML(id) {
   const d = state.trainingDetail[id];
   const p = d?.program;
@@ -309,6 +360,7 @@ function asideHTML(id) {
     ["playbook", "Playbook", on.length],
     ["program", "Program", p ? `v${p.version}` : ""],
     ["history", "History", d?.sessions?.length ?? ""],
+    ["versions", "Versions", d?.history ? d.history.programs.length + d.history.playbooks.length : ""],
   ];
   let body = "";
   if (tab === "playbook") {
@@ -330,6 +382,8 @@ function asideHTML(id) {
         ${p.plan.observations.length ? `<div class="label">What the trainer has noticed</div><ul class="ticks plain">${p.plan.observations.slice(0, 6).map((f) => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}
         <div class="label">Scenario bank · ${p.plan.scenarios.length}</div><ul class="bank">${[...p.plan.scenarios].reverse().slice(0, 10).map((s) => `<li><b>${esc(s.title)}</b><span>${esc(s.setup)}</span></li>`).join("")}</ul>`
       : `<div class="empty small">${icon("note")}<b>No program yet</b>It starts from ${esc(nameOf(id))}'s brief at the first session.</div>`;
+  } else if (tab === "versions") {
+    body = versionsHTML(id, d?.history);
   } else {
     const sessions = d?.sessions ?? [];
     const scores = sessions.filter((s) => s.status === "done" && s.score !== null).map((s) => ({ day: s.day, score: s.score })).reverse();
@@ -337,8 +391,9 @@ function asideHTML(id) {
       ? `<div class="history-chart">${scoreChart(id, scores, { w: 320, h: 96, axis: true })}</div>
         <ul class="sessions">${sessions
           .map(
-            (s) => `<li><div><b>${esc(dayLabel(s.startedAt))}</b><span>${s.status === "running" ? "In progress" : `${s.drills} drill${s.drills === 1 ? "" : "s"} · ${Math.max(1, Math.round(((s.endedAt || Date.now()) - s.startedAt) / 60000))} min`}</span>${s.summary ? `<p>${esc(s.summary)}</p>` : ""}</div>
-            ${s.status === "running" ? `<span class="score-pill live">Live</span>` : s.score !== null ? `<span class="score-pill ${scoreTone(s.score)}">${pct(s.score)}</span>` : `<span class="score-pill">${s.status === "failed" ? "—" : ""}</span>`}</li>`,
+            (s) => `<li><div><b>${esc(dayLabel(s.startedAt))}</b><span>${s.status === "running" ? "In progress" : `${s.drills} drill${s.drills === 1 ? "" : "s"} · ${Math.max(1, Math.round(activeMs(s) / 60000))} min`}${s.trigger === "test" ? " · test" : ""}</span>${s.summary ? `<p>${esc(s.summary)}</p>` : ""}</div>
+            <div class="s-side">${s.status === "running" ? `<span class="score-pill live">${s.pausedAt ? "Paused" : "Live"}</span>` : s.score !== null ? `<span class="score-pill ${scoreTone(s.score)}">${pct(s.score)}</span>` : `<span class="score-pill">${s.status === "failed" ? "—" : ""}</span>`}
+            ${s.status === "running" ? `<button class="icon-btn" data-stop="${s.id}" title="Stop this session">${icon("stop")}</button>` : asking === s.id ? `<span class="s-confirm"><button class="btn sm danger" data-remove="${s.id}">Remove</button><button class="btn sm" data-remove-cancel>Keep</button></span>` : `<button class="icon-btn" data-remove-ask="${s.id}" title="Remove from history">${icon("trash")}</button>`}</div></li>`,
           )
           .join("")}</ul>`
       : `<div class="empty small">${icon("history")}<b>No sessions yet</b>Every session lands here with its score.</div>`;
@@ -390,8 +445,16 @@ function headHTML(id) {
       </div>
       <div class="now today-card">
         <div class="label">Today</div>
-        <div class="today">${ring(id, 64, 6)}<div><b>${shownMinutes(id)}<i> of ${shownBudget(id)} min</i></b><span>${running(m) ? "Session in progress" : lastNight ? `Last night: ${lastNight.score !== null ? `${pct(lastNight.score)}/100` : lastNight.status === "failed" ? "didn't finish" : "done"}` : `Every night, ${esc(windowText())}`}</span></div></div>
-        <button class="btn primary" id="train-now" title="A full ${TEST()}-minute session now. It counts like any other, and never runs over real work." ${running(m) || !m?.joined ? "disabled" : ""}>${icon("play")}${running(m) ? "Training now" : `Train now · ${TEST()} min`}</button>
+        <div class="today">${ring(id, 64, 6)}<div><b>${shownMinutes(id)}<i> of ${shownBudget(id)} min</i></b><span>${running(m) ? (live(id).pausedAt ? "Paused · the clock is stopped" : "Session in progress") : lastNight ? `Last night: ${lastNight.score !== null ? `${pct(lastNight.score)}/100` : lastNight.status === "failed" ? "didn't finish" : "done"}` : `Every night, ${esc(windowText())}`}</span></div></div>
+        ${
+          live(id)
+            ? `<div class="session-ctl">${
+                live(id).pausedAt
+                  ? `<button class="btn primary" id="resume-session">${icon("play")}Resume</button>`
+                  : `<button class="btn" id="pause-session" title="The trainer stops after the drill it's on, and waits">${icon("pause")}Pause</button>`
+              }<button class="btn danger" id="stop-session" title="End it now. Nothing more is written to the program or playbook.">${icon("stop")}Stop</button></div>`
+            : `<button class="btn primary" id="train-now" title="A full ${TEST()}-minute session now. It counts like any other, and never runs over real work." ${!m?.joined ? "disabled" : ""}>${icon("play")}Train now · ${TEST()} min</button>`
+        }
       </div>
     </section>
     <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr))">
@@ -450,6 +513,51 @@ const training = {
           l.disabled = false;
         }
         return;
+      }
+      const act = async (el, run, done) => {
+        el.disabled = true;
+        try {
+          await run();
+          if (done) toast(done);
+          poke();
+        } catch (error) {
+          toast(error.message);
+          el.disabled = false;
+        }
+      };
+      const sid = () => live(id)?.id;
+      const pauseBtn = e.target.closest("#pause-session");
+      if (pauseBtn && sid()) return act(pauseBtn, () => api.pauseSession(sid()), "Paused. The trainer stops after the drill it's on");
+      const resumeBtn = e.target.closest("#resume-session");
+      if (resumeBtn && sid()) return act(resumeBtn, () => api.resumeSession(sid()), "Resumed");
+      const stopBtn = e.target.closest("#stop-session, [data-stop]");
+      if (stopBtn) {
+        const which = stopBtn.dataset.stop || sid();
+        if (which) return act(stopBtn, () => api.stopSession(which), "Stopped. You can remove it from History");
+        return;
+      }
+      const ask = e.target.closest("[data-remove-ask]");
+      if (ask) {
+        asking = ask.dataset.removeAsk;
+        lastAside = asideHTML(id);
+        $("#t-aside").innerHTML = lastAside;
+        return;
+      }
+      if (e.target.closest("[data-remove-cancel]")) {
+        asking = "";
+        lastAside = asideHTML(id);
+        $("#t-aside").innerHTML = lastAside;
+        return;
+      }
+      const rm = e.target.closest("[data-remove]");
+      if (rm) {
+        asking = "";
+        return act(rm, async () => {
+          await api.removeSession(rm.dataset.remove);
+          // Its lines leave the 1:1 too, here as on Link.
+          state.threads[id] = (state.threads[id] ?? []).filter((m) => m.sessionId !== rm.dataset.remove);
+          this.drawThread(false);
+        }, "Removed from history");
       }
       if (e.target.closest("#train-now")) {
         const btn = $("#train-now");

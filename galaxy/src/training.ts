@@ -72,6 +72,10 @@ export interface Session {
   summary: string;
   /** "night" for the overnight program, "test" for one you asked for. */
   trigger: "night" | "test";
+  /** When it was paused, or 0 if it isn't. */
+  pausedAt: number;
+  /** Time spent paused, in ms: it doesn't count towards the session's minutes. */
+  pausedMs: number;
 }
 
 export interface Lesson {
@@ -133,6 +137,22 @@ create table if not exists training_sessions (
   summary text not null default ''
 );
 create index if not exists training_sessions_member on training_sessions(member, day);
+create table if not exists training_program_versions (
+  member text not null,
+  version integer not null,
+  brief text not null,
+  plan text not null,
+  at integer not null,
+  primary key (member, version)
+);
+create table if not exists training_playbook_versions (
+  id integer primary key autoincrement,
+  member text not null,
+  lessons text not null,
+  session_id text not null default '',
+  by text not null default '',
+  at integer not null
+);
 create table if not exists training_lessons (
   id text primary key,
   member text not null,
@@ -211,6 +231,9 @@ export class Training {
     const columns = (table: string) => (this.db.query(`pragma table_info(${table})`).all() as any[]).map((c) => c.name);
     if (!columns("training_sessions").includes("trigger")) this.db.exec("alter table training_sessions add column trigger text not null default 'night'");
     if (!columns("practice").includes("kind")) this.db.exec("alter table practice add column kind text not null default 'practice'");
+    // Pausing: when it was paused (0 = not paused), and how long it has been paused in all.
+    if (!columns("training_sessions").includes("paused_at")) this.db.exec("alter table training_sessions add column paused_at integer not null default 0");
+    if (!columns("training_sessions").includes("paused_ms")) this.db.exec("alter table training_sessions add column paused_ms integer not null default 0");
     this.db.exec("create table if not exists training_meta (key text primary key, value text not null)");
     // Sessions before 0.3 could end in seconds without really running. Start everyone again from their brief, once.
     if (!this.db.query("select 1 from training_meta where key = 'reset-0.4'").get()) {
@@ -235,7 +258,10 @@ export class Training {
   }
 
   private wipe() {
-    this.db.exec("delete from training_sessions; delete from training_lessons; delete from training_programs; delete from training_thread; delete from practice;");
+    this.db.exec(
+      "delete from training_sessions; delete from training_lessons; delete from training_programs; delete from training_thread; delete from practice; " +
+        "delete from training_program_versions; delete from training_playbook_versions;",
+    );
   }
 
   /** You start training over: every program, session, lesson and 1:1 goes. Members start from their brief again. */
@@ -252,9 +278,11 @@ export class Training {
    */
   private settleStale() {
     const trainerUp = this.link.isOnline(TRAINER);
-    const rows = this.db.query("select id, member, started_at from training_sessions where status = 'running'").all() as any[];
+    const rows = this.db.query("select id, member, started_at, paused_at, paused_ms from training_sessions where status = 'running'").all() as any[];
     for (const r of rows) {
-      const late = this.now() - r.started_at > (budgetFor(r.member) + 10) * 60_000;
+      const paused = r.paused_ms + (r.paused_at ? this.now() - r.paused_at : 0);
+      // Paused more than an hour: it's not coming back. Otherwise only running time counts.
+      const late = r.paused_at ? this.now() - r.paused_at > 60 * 60_000 : this.now() - r.started_at - paused > (budgetFor(r.member) + 10) * 60_000;
       if (!trainerUp || late) {
         this.db
           .query("update training_sessions set status = 'failed', ended_at = ?, summary = ? where id = ?")
@@ -302,8 +330,118 @@ export class Training {
       )
       .run(member, brief, JSON.stringify(plan), this.now());
     const after = this.program(member)!;
+    this.snapshotProgram(after);
     if (before) this.recordChange(member, before, after);
     return after;
+  }
+
+  private snapshotProgram(p: Program) {
+    this.db
+      .query("insert or replace into training_program_versions (member, version, brief, plan, at) values (?, ?, ?, ?, ?)")
+      .run(p.member, p.version, p.brief, JSON.stringify(p.plan), this.now());
+  }
+
+  private snapshotPlaybook(member: BodyID, sessionId: string, by: string) {
+    const lessons = this.lessons(member).map((l) => l.text);
+    const last = this.db.query("select lessons from training_playbook_versions where member = ? order by id desc limit 1").get(member) as any;
+    if (last && last.lessons === JSON.stringify(lessons)) return;
+    this.db
+      .query("insert into training_playbook_versions (member, lessons, session_id, by, at) values (?, ?, ?, ?, ?)")
+      .run(member, JSON.stringify(lessons), sessionId, by, this.now());
+  }
+
+  /** Every version of a member's program and playbook, newest first. */
+  history(member: string) {
+    this.needTrainee(member);
+    const current = this.program(member);
+    if (current && !this.db.query("select 1 from training_program_versions where member = ? and version = ?").get(member, current.version)) {
+      this.snapshotProgram(current); // programs from before history was kept
+    }
+    const programs = (this.db.query("select * from training_program_versions where member = ? order by version desc limit 100").all(member) as any[]).map((r) => ({
+      version: r.version,
+      brief: r.brief,
+      plan: JSON.parse(r.plan) as TrainingPlan,
+      at: r.at,
+    }));
+    const playbooks = (this.db.query("select * from training_playbook_versions where member = ? order by id desc limit 100").all(member) as any[]).map((r, i, all) => ({
+      n: all.length - i,
+      lessons: JSON.parse(r.lessons) as string[],
+      sessionId: r.session_id,
+      by: r.by,
+      at: r.at,
+    }));
+    return { programs, playbooks };
+  }
+
+  // ------------------------------------------------------------- pausing
+
+  /** You pause a running session. The trainer stops at the next drill or turn and waits. */
+  pause(who: BodyID, id: string): Session {
+    if (who !== "you" && who !== "galaxy") throw new TrainingError(403, "only you can pause a session");
+    const s = this.session(id);
+    if (!s) throw new TrainingError(404, "no such session");
+    if (s.status !== "running") throw new TrainingError(409, "that session isn't running");
+    if (!s.pausedAt) this.db.query("update training_sessions set paused_at = ? where id = ?").run(this.now(), id);
+    for (const wake of [...this.threadWaiters]) wake();
+    return this.session(id)!;
+  }
+
+  resume(who: BodyID, id: string): Session {
+    if (who !== "you" && who !== "galaxy") throw new TrainingError(403, "only you can resume a session");
+    const s = this.session(id);
+    if (!s) throw new TrainingError(404, "no such session");
+    if (s.pausedAt) {
+      this.db.query("update training_sessions set paused_ms = paused_ms + ?, paused_at = 0 where id = ?").run(this.now() - s.pausedAt, id);
+    }
+    for (const wake of [...this.threadWaiters]) wake();
+    return this.session(id)!;
+  }
+
+  /**
+   * You stop a running session now: it ends as stopped, its open drills close, and the
+   * trainer gives up at its next drill or turn without changing the program or playbook.
+   */
+  stop(who: BodyID, id: string): Session {
+    if (who !== "you" && who !== "galaxy") throw new TrainingError(403, "only you can stop a session");
+    const s = this.session(id);
+    if (!s) throw new TrainingError(404, "no such session");
+    if (s.status !== "running") return s;
+    const pausedFor = s.pausedAt ? this.now() - s.pausedAt : 0;
+    this.db.transaction(() => {
+      this.db
+        .query("update training_sessions set status = 'failed', ended_at = ?, paused_at = 0, paused_ms = paused_ms + ?, summary = 'Stopped by you.' where id = ?")
+        .run(this.now(), pausedFor, id);
+      this.db.query("update practice set status = 'expired' where session_id = ? and status = 'waiting'").run(id);
+    })();
+    for (const wake of [...this.threadWaiters]) wake();
+    return this.session(id)!;
+  }
+
+  /** The trainer only writes into a session that's still running: one you stopped or removed stays that way. */
+  private needLive(sessionId: unknown) {
+    const id = clean(sessionId, 40);
+    if (!id) return;
+    const s = this.session(id);
+    if (!s || s.status !== "running") throw new TrainingError(409, "that session was stopped");
+  }
+
+  /**
+   * You remove a finished session from history: it, its drills and its 1:1 lines go, and it
+   * no longer counts in scores or minutes. What it taught (program changes, playbook) stays,
+   * since that already happened; change those in their own tabs.
+   */
+  removeSession(who: BodyID, id: string) {
+    if (who !== "you" && who !== "galaxy") throw new TrainingError(403, "only you can remove a session");
+    const s = this.session(id);
+    if (!s) throw new TrainingError(404, "no such session");
+    if (s.status === "running") throw new TrainingError(409, "stop or wait for the session to finish first");
+    this.db.transaction(() => {
+      this.db.query("delete from training_thread where session_id = ?").run(id);
+      this.db.query("delete from practice where session_id = ?").run(id);
+      this.db.query("delete from training_sessions where id = ?").run(id);
+    })();
+    for (const wake of [...this.threadWaiters]) wake();
+    return { ok: true, removed: id };
   }
 
   /**
@@ -341,6 +479,8 @@ export class Training {
       score: r.score,
       summary: r.summary,
       trigger: r.trigger === "test" ? "test" : "night",
+      pausedAt: r.paused_at ?? 0,
+      pausedMs: r.paused_ms ?? 0,
     };
   }
 
@@ -374,6 +514,7 @@ export class Training {
     this.needTrainer(who);
     const s = this.session(id);
     if (!s) throw new TrainingError(404, "no such session");
+    if (s.status !== "running") return s; // you stopped it first: that stands
     const status = input.status === "failed" ? "failed" : "done";
     const score = typeof input.score === "number" && Number.isFinite(input.score) ? Math.max(0, Math.min(100, input.score)) : null;
     this.db
@@ -385,8 +526,11 @@ export class Training {
 
   /** Minutes of training a member has had on `day`. Sessions you asked for count like any other. */
   minutesOn(member: BodyID, day: string): number {
-    const rows = this.db.query("select started_at, ended_at from training_sessions where member = ? and day = ?").all(member, day) as any[];
-    const ms = rows.reduce((sum, r) => sum + ((r.ended_at || this.now()) - r.started_at), 0);
+    const rows = this.db.query("select started_at, ended_at, paused_at, paused_ms from training_sessions where member = ? and day = ?").all(member, day) as any[];
+    const ms = rows.reduce(
+      (sum, r) => sum + ((r.ended_at || this.now()) - r.started_at) - r.paused_ms - (r.paused_at && !r.ended_at ? this.now() - r.paused_at : 0),
+      0,
+    );
     return Math.round(ms / 60_000);
   }
 
@@ -411,6 +555,7 @@ export class Training {
   setPlaybook(who: BodyID, member: string, texts: unknown, sessionId = ""): Lesson[] {
     this.needTrainer(who);
     this.needTrainee(member);
+    this.needLive(sessionId);
     const wanted = strings(texts, PLAYBOOK_MAX, LESSON_MAX_CHARS);
     const key = (t: string) => t.toLowerCase().replace(/\s+/g, " ").replace(/[.!\s]+$/, "");
     const current = this.lessons(member);
@@ -428,6 +573,7 @@ export class Training {
           .run(newID("l"), member, text, sessionId, this.now());
       }
     })();
+    this.snapshotPlaybook(member, sessionId, "trainer");
     return this.lessons(member);
   }
 
@@ -437,6 +583,7 @@ export class Training {
     const r = this.db.query("select * from training_lessons where id = ?").get(id) as any;
     if (!r) throw new TrainingError(404, "no such lesson");
     this.db.query("update training_lessons set active = ? where id = ?").run(active ? 1 : who === "you" ? -1 : 0, id);
+    this.snapshotPlaybook(r.member, "", who);
     return this.rowToLesson(this.db.query("select * from training_lessons where id = ?").get(id));
   }
 
@@ -479,6 +626,7 @@ export class Training {
     this.needTrainee(member);
     const text = clean(input.text, 20_000);
     if (!text) throw new TrainingError(400, "nothing to say");
+    if (who === TRAINER) this.needLive(input.sessionId);
     let kind = (input.kind ?? "message") as ThreadKind;
     let speaker: BodyID = who;
     if (who === "you") kind = "note";
@@ -556,6 +704,7 @@ export class Training {
     const kind = input.kind === "workout" ? "workout" : "practice";
     const prompt = clean(input.prompt, kind === "workout" ? 20_000 : 12_000);
     if (!prompt) throw new TrainingError(400, "a drill needs a prompt");
+    this.needLive(input.sessionId);
     const power = kind === "workout" ? "gesture_training" : "practice";
     if (!this.link.isOnline(member) || !this.store.body(member)?.powers.includes(power)) {
       throw new TrainingError(409, `${this.link.profile(member).name} can't take a ${kind === "workout" ? "workout" : "drill"} right now`);
@@ -677,6 +826,7 @@ export class Training {
       lessons: this.lessons(member, true),
       sessions: this.sessions(member, 30),
       thread: this.thread(member),
+      history: this.history(member),
     };
   }
 }

@@ -99,7 +99,9 @@ describe("Link's training API", () => {
 
   test("a drill reaches the member's inbox, only it can answer, and the answer lands in its 1:1", async () => {
     link.hello("comet", { powers: ["practice"] });
-    const drill = await as("trainer")<any>("POST", "/v1/practice", { member: "comet", sessionId: "s_1", prompt: "Someone texts hi." });
+    link.hello("trainer", {});
+    const session = await as("trainer")<any>("POST", "/v1/training/comet/sessions", { day: "2026-10-28" });
+    const drill = await as("trainer")<any>("POST", "/v1/practice", { member: "comet", sessionId: session.id, prompt: "Someone texts hi." });
     const inbox = await link.inbox("comet", 0);
     expect(inbox.map((i) => [i.kind, i.taskId])).toEqual([["practice", drill.id]]);
     expect(await as("nova")("POST", `/v1/practice/${drill.id}/answer`, { answer: "hi" })).toBeNull();
@@ -396,5 +398,87 @@ describe("Comet's brief, updated", () => {
     expect(again.training.thread("comet").some((m) => m.kind === "change" && m.text.includes("Which email?"))).toBe(true);
     const v = p.version;
     expect(new Link(store, new PresenceReader(() => 10)).training.program("comet")!.version).toBe(v);
+  });
+});
+
+describe("pausing, stopping and removing sessions", () => {
+  test("a paused session waits, and the paused time doesn't count against it", async () => {
+    link.hello("comet", {});
+    link.hello("trainer", {});
+    let t = 0;
+    let paused = false;
+    const log: string[] = [];
+    const think = fakeThink(log);
+    const coach = new Coach({
+      call: as("trainer"),
+      think: async (p) => {
+        t += 60_000;
+        const r = await think(p);
+        // Pause while the first drill is being rehearsed.
+        if (p.startsWith("Rehearse as") && !paused) {
+          paused = true;
+          const s = link.training.sessions("comet").find((x) => x.status === "running")!;
+          await as("you")("POST", `/v1/training/sessions/${s.id}/pause`, {});
+        }
+        return r;
+      },
+      budgetMs: 12 * 60_000,
+      now: () => t,
+      sleep: async () => {
+        t += 10 * 60_000; // ten minutes go by while paused...
+        const s = link.training.sessions("comet").find((x) => x.status === "running")!;
+        await as("you")("POST", `/v1/training/sessions/${s.id}/resume`, {});
+      },
+    });
+    const s = await coach.session("comet", "2026-10-28");
+    // ...and both drills still ran, because the pause didn't eat into the twelve minutes.
+    expect(s?.status).toBe("done");
+    expect(s?.drills).toBe(2);
+    expect(link.training.thread("comet").some((m) => m.text.startsWith("Paused."))).toBe(true);
+  });
+
+  test("a stopped session ends at once, writes nothing more, and can then be removed", async () => {
+    link.hello("comet", {});
+    link.hello("trainer", {});
+    const log: string[] = [];
+    const think = fakeThink(log);
+    let sid = "";
+    const coach = new Coach({
+      call: as("trainer"),
+      think: async (p) => {
+        const r = await think(p);
+        if (p.startsWith("Rehearse as") && !sid) {
+          sid = link.training.sessions("comet").find((x) => x.status === "running")!.id;
+          expect(await as("you")("DELETE", `/v1/training/sessions/${sid}`)).toBeNull(); // still running
+          await as("you")("POST", `/v1/training/sessions/${sid}/stop`, {});
+        }
+        return r;
+      },
+      budgetMs: 12 * 60_000,
+    });
+    const before = link.training.program("comet");
+    const s = await coach.session("comet", "2026-10-28");
+    expect(s).toMatchObject({ status: "failed", summary: "Stopped by you." });
+    expect(log).not.toContain("wrap");
+    expect(log.filter((x) => x === "rehearse")).toHaveLength(1);
+    expect(link.training.program("comet")!.version).toBe(before?.version ?? link.training.program("comet")!.version);
+    // The trainer can't write into it afterwards.
+    expect(await as("trainer")("POST", "/v1/training/comet/thread", { kind: "message", text: "late", sessionId: sid })).toBeNull();
+
+    expect(await as("comet")("DELETE", `/v1/training/sessions/${sid}`)).toBeNull(); // only you
+    expect(await as("you")("DELETE", `/v1/training/sessions/${sid}`)).toMatchObject({ ok: true });
+    expect(link.training.session(sid)).toBeNull();
+    expect(link.training.thread("comet").some((m) => m.sessionId === sid)).toBe(false);
+    expect(link.training.minutesOn("comet", "2026-10-28")).toBe(0);
+  });
+
+  test("every version of the program and the playbook is kept", async () => {
+    link.hello("comet", {});
+    link.hello("trainer", {});
+    await new Coach({ call: as("trainer"), think: fakeThink(), budgetMs: 12 * 60_000 }).session("comet", "2026-10-28");
+    const h = (await as("you")<any>("GET", "/v1/training/comet"))!.history;
+    expect(h.programs.length).toBeGreaterThanOrEqual(2);
+    expect(h.programs[0].version).toBeGreaterThan(h.programs.at(-1).version);
+    expect(h.playbooks[0].lessons).toContain("Before texting someone new, get the owner's yes in their own words.");
   });
 });

@@ -228,6 +228,19 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
   if (lesson && method === "PATCH") return json(training.setLessonActive(needBody(), lesson[1]!, Boolean((await input()).active)));
   const finish = path.match(/^\/v1\/training\/sessions\/([\w-]+)\/finish$/);
   if (finish && method === "POST") return json(training.finishSession(needBody(), finish[1]!, await input()));
+  const sess = path.match(/^\/v1\/training\/sessions\/([\w-]+)(?:\/(pause|resume|stop))?$/);
+  if (sess) {
+    const [, sid, act] = sess as unknown as [string, string, string | undefined];
+    if (!act && method === "GET") {
+      const s = training.session(sid);
+      if (!s) throw new LinkError(404, "no such session");
+      return json(s);
+    }
+    if (!act && method === "DELETE") return json(training.removeSession(needBody(), sid));
+    if (act === "pause" && method === "POST") return json(training.pause(needBody(), sid));
+    if (act === "resume" && method === "POST") return json(training.resume(needBody(), sid));
+    if (act === "stop" && method === "POST") return json(training.stop(needBody(), sid));
+  }
   const tm = path.match(/^\/v1\/training\/([a-z][a-z0-9-]{1,31})(?:\/(program|sessions|playbook|thread|train))?$/);
   if (tm) {
     const [, member, part] = tm as unknown as [string, string, string | undefined];

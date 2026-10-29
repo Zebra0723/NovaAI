@@ -34,7 +34,10 @@ export interface CoachOptions {
   /** How long a member gets to answer a turn itself. */
   answerWaitMs?: number;
   now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 }
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export interface SessionOptions {
   budgetMs?: number;
@@ -77,6 +80,12 @@ const SHORT_THINK_MS = 120_000;
 const WRAP_RESERVE_MS = 90_000;
 const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+/** You stopped or removed the session from Link: it ends there, with nothing more written. */
+class StoppedByYou extends Error {}
+
+/** How often a paused session looks to see whether you've resumed it. */
+const PAUSE_POLL_MS = 5000;
+
 export class Coach {
   private readonly now: () => number;
   constructor(private readonly o: CoachOptions) {
@@ -90,6 +99,24 @@ export class Coach {
   /** One retry: a single hiccup from Claude Code shouldn't cost a drill or end a session early. */
   private async think(prompt: string, ms: number): Promise<string | null> {
     return (await this.o.think(prompt, Math.max(30_000, ms))) ?? (await this.o.think(prompt, Math.max(30_000, ms)));
+  }
+
+  /**
+   * Between drills and turns: if you paused the session, wait here until you resume it
+   * (the paused time is added back to the deadline); if you stopped it, end now.
+   */
+  private async checkpoint(ctx: Ctx) {
+    let s = await this.o.call<Session>("GET", `/v1/training/sessions/${ctx.sid}`);
+    if (s && s.status !== "running") throw new StoppedByYou();
+    if (!s?.pausedAt) return;
+    const from = this.now();
+    await this.say(ctx.member, "message", "Paused. I'll pick up from here when you resume.", { sessionId: ctx.sid }).catch(() => null);
+    while (s?.pausedAt) {
+      await (this.o.sleep ?? sleep)(PAUSE_POLL_MS);
+      s = await this.o.call<Session>("GET", `/v1/training/sessions/${ctx.sid}`);
+      if (!s || s.status !== "running") throw new StoppedByYou();
+    }
+    ctx.deadline += this.now() - from;
   }
 
   /** Whether the member is in the middle of real work. Training never runs over it. */
@@ -116,6 +143,7 @@ export class Coach {
       }
       return await this.wrap(ctx, learnt);
     } catch (error) {
+      if (error instanceof StoppedByYou) return await this.o.call<Session>("GET", `/v1/training/sessions/${sid}`);
       const why = error instanceof Error ? error.message : String(error);
       await this.say(member, "message", `This session stopped: ${why}`, { sessionId: sid });
       return await this.o.call<Session>("POST", `/v1/training/sessions/${sid}/finish`, { status: "failed", drills: ctx.drills, summary: `Stopped: ${why}` });
@@ -172,6 +200,7 @@ export class Coach {
       scenarios: [...l.program.plan.scenarios, ...(planned?.newScenarios ?? [])],
       observations: [...(planned?.observations ?? []), ...l.program.plan.observations].slice(0, 20),
     };
+    await this.checkpoint(ctx);
     l.program = (await this.o.call<Program>("PUT", `/v1/training/${member}/program`, { plan })) ?? l.program;
 
     // Never the same drill twice: anything already done is dropped.
@@ -203,6 +232,7 @@ export class Coach {
     while (drills.length && round < 6) {
       round++;
       const more = await this.runDrills(ctx, l, drills, practises);
+      await this.checkpoint(ctx);
       if (!more || this.now() > ctx.deadline - WRAP_RESERVE_MS - 60_000) break;
       const sofar = (await this.o.call<MemberDetail>("GET", `/v1/training/${member}`))?.thread.filter((m) => m.sessionId === sid) ?? [];
       const next = readJSON<{ drills?: Drill[] }>(await this.think(morePrompt(nameOf(member), l, sofar, [...seen]), SHORT_THINK_MS));
@@ -214,6 +244,7 @@ export class Coach {
   private async runDrills(ctx: Ctx, l: Learnt, drills: Drill[], practises: boolean): Promise<boolean> {
     const { member, sid } = ctx;
     for (const drill of drills) {
+      await this.checkpoint(ctx);
       if (this.now() > ctx.deadline - WRAP_RESERVE_MS) return false;
       if (await this.busy(member)) {
         ctx.stopped = `${nameOf(member)} picked up real work`;
@@ -230,6 +261,7 @@ export class Coach {
         }
         continue;
       }
+      await this.checkpoint(ctx);
       ctx.drills++;
       const graded = readJSON<{ score?: number; feedback?: string }>(
         await this.think(gradePrompt(nameOf(member), l.program, drill, transcript), Math.min(SHORT_THINK_MS, ctx.deadline - this.now())),
@@ -260,6 +292,7 @@ export class Coach {
     await this.say(ctx.member, "drill", `Simulation · ${drill.title}\n${drill.prompt}`, { sessionId: ctx.sid });
     const transcript: Turn[] = [{ who: "world", text: drill.prompt }];
     for (let turn = 1; turn <= turns; turn++) {
+      await this.checkpoint(ctx);
       if (this.now() > ctx.deadline - WRAP_RESERVE_MS / 2) break;
       const answer = await this.respond(ctx, l, practises, simText(drill, transcript, turn, turns));
       if (!answer) break;
@@ -314,10 +347,12 @@ export class Coach {
       focus: spec.programFocus?.length ? spec.programFocus : l.program.plan.focus,
       observations: [...(spec.observations ?? []), ...l.program.plan.observations].slice(0, 20),
     };
+    await this.checkpoint(ctx);
     l.program = (await this.o.call<Program>("PUT", `/v1/training/nebula/program`, { plan })) ?? l.program;
     await this.say("nebula", "message", spec.opening?.trim() || "Tonight's workout is built around the gestures you've been missing.", { sessionId: ctx.sid });
     const workout = { type: "gesture_workout", version: 1, minutes, sessionId: ctx.sid, focus: spec.focus, conditions: spec.conditions ?? [], negatives: spec.negatives ?? [], mix: spec.mix ?? { perfect: 0.2 }, difficulty: spec.difficulty ?? "harder than last time" };
     await this.say("nebula", "drill", `Workout · ${minutes} minutes\n${describeWorkout(workout)}`, { sessionId: ctx.sid });
+    await this.checkpoint(ctx);
     if (await this.busy("nebula")) {
       ctx.stopped = "Nebula picked up real work";
       return;
@@ -337,6 +372,7 @@ export class Coach {
   // -------------------------------------------------------------------- wrap
 
   private async wrap(ctx: Ctx, l: Learnt): Promise<Session | null> {
+    await this.checkpoint(ctx);
     const { member, sid } = ctx;
     const thread = (await this.o.call<MemberDetail>("GET", `/v1/training/${member}`))?.thread.filter((m) => m.sessionId === sid) ?? [];
     const wrapped = ctx.drills
@@ -344,6 +380,7 @@ export class Coach {
           await this.think(wrapPrompt(nameOf(member), l.program, l.lessons, thread), THINK_MS),
         )
       : null;
+    await this.checkpoint(ctx); // nothing it learnt is written if you stopped it while it was thinking
     if (wrapped?.playbook?.length) await this.o.call("PUT", `/v1/training/${member}/playbook`, { lessons: wrapped.playbook, sessionId: sid });
     // The program changes now, from what this session showed, not only when the next one plans.
     if (wrapped && (wrapped.focus?.length || wrapped.observations?.length || wrapped.newScenarios?.length)) {

@@ -891,3 +891,34 @@ kbd { font: 400 11px var(--mono); padding: 1px 6px; border-radius: 5px; border: 
 .change-card li::before { position: absolute; left: 2px; top: 0; font: 600 13px var(--mono); }
 .change-card li.plus::before { content: "+"; color: var(--good); }
 .change-card li.minus::before { content: "−"; color: var(--bad); }
+
+/* Pausing and stopping a session, removing one, and every version of the program and playbook. */
+.session-ctl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+.today-card .session-ctl .btn { margin-top: 0; }
+.btn.danger svg { color: var(--bad); }
+.sessions .s-side { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.sessions .s-side .icon-btn { opacity: .55; }
+.sessions li:hover .s-side .icon-btn, .sessions .s-side .icon-btn:focus-visible { opacity: 1; }
+.sessions .s-confirm { display: inline-flex; gap: 4px; margin: 0; font: inherit; }
+.sessions .s-confirm .btn.danger { color: var(--bad); border-color: #e9c9c3; background: #fdf6f4; }
+.tabs button { padding: 0 4px; white-space: nowrap; }
+.versions { display: grid; gap: 8px; }
+.version { border: 1px solid var(--rule); border-radius: 12px; padding: 0 12px; background: #fff; }
+.version[open] { padding-bottom: 10px; }
+.version summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 10px 0; }
+.version summary::-webkit-details-marker { display: none; }
+.version summary b { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.version summary span { font: 400 10.5px var(--mono); color: var(--ink-3); text-align: right; }
+.version .label { margin: 10px 0 4px; }
+.diff { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.diff li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px; padding: 6px 8px; border-radius: 8px; font-size: 12.5px; line-height: 1.45; }
+.diff li i { font: 500 12px var(--mono); font-style: normal; }
+.diff li em { font-style: normal; font: 400 10px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-right: 6px; }
+.diff li em:empty { display: none; }
+.diff .plus { background: color-mix(in srgb, var(--good) 8%, #fff); }
+.diff .plus i { color: var(--good); }
+.diff .minus { background: color-mix(in srgb, var(--bad) 7%, #fff); color: var(--ink-2); }
+.diff .minus i { color: var(--bad); }
+.diff .minus span { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.lessons.compact li { grid-template-columns: 24px minmax(0, 1fr); padding: 7px 0; }
+.lessons.compact p { font-size: 12.5px; }
