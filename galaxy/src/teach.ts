@@ -62,6 +62,8 @@ export interface LessonContent {
   sections: Section[];
   quiz: Choice[];
   takeaways: string[];
+  /** Your earlier lessons this one builds on, by title. Only ones you've finished. */
+  buildsOn: string[];
 }
 
 export interface Lesson {
@@ -177,6 +179,19 @@ create table if not exists teach_notes (
 create table if not exists teach_meta (key text primary key, value text not null);
 `;
 
+/**
+ * How Teach talks to you. It starts in plain words and, as you finish lessons, builds on
+ * what you learnt in them. A run of low quiz scores steps it back one.
+ *   1: plain words, no jargon, everyday analogies
+ *   2: plain, but words from your finished lessons are used with a quick reminder
+ *   3: builds on your lessons freely and connects new ideas to them
+ */
+export function languageStage(finished: number, recentAverage: number | null): 1 | 2 | 3 {
+  let stage = finished >= 8 ? 3 : finished >= 3 ? 2 : 1;
+  if (recentAverage !== null && recentAverage < 60 && stage > 1) stage--;
+  return stage as 1 | 2 | 3;
+}
+
 export class TeachError extends Error {
   constructor(
     public status: number,
@@ -264,6 +279,7 @@ export function tidyLesson(raw: any): LessonContent | null {
     sections,
     quiz,
     takeaways: (Array.isArray(raw.takeaways) ? raw.takeaways : []).map((t: unknown) => clean(t, 300)).filter(Boolean).slice(0, 8),
+    buildsOn: (Array.isArray(raw.buildsOn) ? raw.buildsOn : []).map((t: unknown) => clean(t, 140)).filter(Boolean).slice(0, 4),
   };
 }
 
@@ -535,6 +551,9 @@ export class Teach {
     if (l.status !== "writing") throw new TeachError(409, "that lesson is already written");
     const content = tidyLesson(raw);
     if (!content) throw new TeachError(400, "that lesson is missing its sections or quiz");
+    // It can only build on lessons you really finished.
+    const done = new Map(this.lessons(300).filter((x) => x.status === "done").map((x) => [topicKey(x.title), x.title]));
+    content.buildsOn = [...new Set(content.buildsOn.map((t) => done.get(topicKey(t))).filter((t): t is string => !!t))];
     this.db.query("update teach_lessons set status = 'ready', content = ?, title = ?, minutes = ? where id = ?").run(JSON.stringify(content), content.title, content.minutes, id);
     this.changed();
     return this.lesson(id)!;
@@ -788,6 +807,7 @@ export class Teach {
       topics,
       notes: this.notes(),
       style: this.style(),
+      stage: this.stage(),
       stats: {
         finished: done.length,
         minutes: done.reduce((s, l) => s + l.minutes, 0),
@@ -800,10 +820,21 @@ export class Teach {
 
   /** What Teach needs to write a lesson for you: the learner map, your style, recent lessons. */
   context() {
+    const done = this.lessons(300).filter((l) => l.status === "done");
     return {
       topics: this.topics().slice(0, 120).map((t) => ({ title: t.title, level: t.level, skipped: t.skipped, lessons: t.lessons })),
       style: this.style()?.text ?? "",
       recent: this.lessons(12).map((l) => ({ title: l.title, score: l.score, status: l.status })),
+      stage: this.stage(),
+      // What you've learnt here, so new lessons can build on it (and only on it).
+      learnt: done.slice(0, 25).map((l) => ({ title: l.title, score: l.score, takeaways: l.content?.takeaways ?? [] })),
     };
+  }
+
+  /** How plainly Teach writes for you right now (see languageStage). */
+  stage(): 1 | 2 | 3 {
+    const done = this.lessons(300).filter((l) => l.status === "done");
+    const recent = done.slice(0, 3).map((l) => l.score ?? 0);
+    return languageStage(done.length, recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : null);
   }
 }

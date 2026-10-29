@@ -15,6 +15,8 @@ interface Context {
   topics: { title: string; level: string; skipped: number; lessons: number }[];
   style: string;
   recent: { title: string; score: number | null; status: string }[];
+  stage?: 1 | 2 | 3;
+  learnt?: { title: string; score: number | null; takeaways: string[] }[];
 }
 
 const WRITE_MS = 6 * 60_000;
@@ -35,7 +37,7 @@ export class Tutor {
   constructor(private readonly o: TutorOptions) {}
 
   private context() {
-    return this.o.call<Context>("GET", "/v1/teach/context").then((c) => c ?? { topics: [], style: "", recent: [] });
+    return this.o.call<Context>("GET", "/v1/teach/context").then((c): Context => c ?? { topics: [], style: "", recent: [], stage: 1, learnt: [] });
   }
 
   /** Turns what the watcher saw into at most two offers. Returns what it offered. */
@@ -60,6 +62,7 @@ export class Tutor {
     if (!lesson || lesson.status !== "writing") return false;
     const ctx = await this.context();
     let problem = "";
+    // A lesson can only build on lessons really finished; Link drops any other title.
     for (let attempt = 0; attempt < 2; attempt++) {
       const raw = readJSON(await this.o.think(lessonPrompt(lesson, ctx, problem), WRITE_MS));
       if (raw) {
@@ -82,7 +85,8 @@ export class Tutor {
     const lesson = await this.o.call<Lesson>("GET", `/v1/teach/lessons/${c.lessonId}`);
     const step = lesson?.content?.sections[c.section];
     if (!step || step.kind !== "practice") return false;
-    const verdict = readJSON<{ ok?: boolean; feedback?: string }>(await this.o.think(checkPrompt(lesson!.title, step, c.answer), SHORT_MS));
+    const ctx = await this.context();
+    const verdict = readJSON<{ ok?: boolean; feedback?: string }>(await this.o.think(checkPrompt(lesson!.title, step, c.answer, ctx.stage ?? 1), SHORT_MS));
     await this.o.call("PUT", `/v1/teach/checks/${id}`, {
       ok: verdict?.ok === true,
       feedback: verdict?.feedback?.trim() || (verdict ? "" : "I couldn't look at that just now. Compare yours with the answer."),
@@ -102,6 +106,34 @@ export class Tutor {
 }
 
 // ------------------------------------------------------------------- prompts
+
+/** How to talk at each stage (see languageStage in ../teach). */
+export function languageGuide(stage: 1 | 2 | 3): string {
+  if (stage === 1)
+    return `LANGUAGE: they're just starting out, so keep it SIMPLE.
+- Everyday words and short sentences (most under 15 words). Talk like a friend explaining over their shoulder.
+- No jargon. If a technical word can't be avoided, explain it in plain words the first time ("a port is like a numbered door on your Mac that a program listens at") and then keep using that same word.
+- Start every idea with an everyday comparison (a front door, a babysitter, a phone number, a to-do list) before anything technical.
+- One idea per section. Don't assume they know what a terminal, server, process, file path, port or variable is unless it's in what they've learnt below.
+- Code and commands stay short, and every part of them is explained.`;
+  if (stage === 2)
+    return `LANGUAGE: still plain and friendly, but they've done a few lessons now.
+- Words and ideas from lessons they've finished (listed below) can be used without explaining them again: add a two-to-five word reminder in brackets the first time ("the port (the numbered door)").
+- Anything they haven't learnt yet is still explained in plain words, with an everyday comparison.
+- Point back to an earlier lesson where it really helps: "Remember *What a port is*? ...".`;
+  return `LANGUAGE: they've learnt a lot here, so build on it.
+- Use words from their finished lessons freely, and connect the new idea to them by name ("This is the same trick as in *git pull --rebase*...").
+- You can go a bit deeper and move faster, but anything new is still explained clearly the first time, in plain words.`;
+}
+
+function learntList(ctx: Context) {
+  const learnt = ctx.learnt ?? [];
+  if (!learnt.length) return "(nothing yet: this is one of their first lessons, so assume no background at all)";
+  return learnt
+    .slice(0, 20)
+    .map((l) => `- "${l.title}"${l.score !== null ? ` (quiz ${l.score}/100)` : ""}${l.takeaways.length ? `: ${l.takeaways.slice(0, 3).join(" / ")}` : ""}`)
+    .join("\n");
+}
 
 function knownList(ctx: Context) {
   const lines = ctx.topics.slice(0, 80).map((t) => `- ${t.title}: ${t.level}${t.skipped ? `, skipped ${t.skipped}x` : ""}${t.lessons ? `, ${t.lessons} lesson(s)` : ""}`);
@@ -126,7 +158,7 @@ Pick AT MOST TWO things here worth a 10 to 30 minute lesson right now: a command
 - Name each topic short and general, so it matches next time: "launchctl kickstart", not the whole line.
 - If nothing is worth a lesson, offer nothing. Most of the time that's the right answer.
 - Never put anything private in what you write: no tokens, passwords, emails, names of people, message text or file contents. Only the topic.
-- why: one friendly line for the notification, about what they'll get out of it ("You ran it twice today: here's what it actually restarts").
+- why: one friendly line for the notification, about what they'll get out of it ("You ran it twice today: here's what it actually restarts").${(ctx.stage ?? 1) === 1 ? " They're new to this, so write the title and why in plain everyday words, no jargon." : ""}
 - minutes: 10 to 30, by how much there is to it and how new it is to them.
 
 Reply with only JSON: {"offers": [{"topic": "...", "title": "What \`launchctl kickstart\` does", "why": "...", "minutes": 15, "app": "Terminal"}]}`;
@@ -141,10 +173,16 @@ ${LEARNER}
 What they know already (build on it, don't re-teach what's solid):
 ${knownList(ctx)}
 
+Lessons they've finished here, with what they took away (the ONLY lessons you may refer back to):
+${learntList(ctx)}
+
+${languageGuide(ctx.stage ?? 1)}
+Never refer to a lesson or idea as something they learnt unless it's in that list.
+
 How they learn best, from earlier lessons:
 ${ctx.style || "(no lessons yet: use short sections, concrete examples first, then the idea)"}
 
-Make it ENGAGING: talk to them directly, warm and a bit playful, short paragraphs, a vivid analogy, real examples from THEIR GalaxyAI (Comet, Nova, galaxyd, launchd agents, install scripts) wherever it fits. Never dull or textbook. Length: ${lesson.minutes || 15} minutes give or take (10 to 30), so roughly 2 minutes per section plus the quiz.
+Make it ENGAGING: talk to them directly, warm and a bit playful, short paragraphs, a vivid analogy, real examples from THEIR GalaxyAI (Comet, Nova, galaxyd, launchd agents, install scripts) wherever it fits. Never dull or textbook. Follow the LANGUAGE rules above in every section, scenario, question and takeaway. Length: ${lesson.minutes || 15} minutes give or take (10 to 30), so roughly 2 minutes per section plus the quiz.
 
 Structure, in this order:
 1. 3 to 5 "explain" sections building the idea step by step. Each has a title, a body (plain text, use blank lines between paragraphs, \`backticks\` for code), an optional example {code, caption}, a keyPoint (one line to remember), and most have a check question {q, choices, answer, why}.
@@ -152,6 +190,7 @@ Structure, in this order:
 3. 1 to 3 "practice" sections: hands-on, they type the command or code into the lesson (it's never run). Fields: title, task (exactly what to type it for), hint, accept (1 to 4 JavaScript regex strings that match a correct answer, tolerant of spacing and equivalent forms), solution, explain (why that works), keyPoint. Never ask for anything destructive.
 4. A quiz of 5 to 8 multiple-choice questions mixing recall and "what would you do", each with a concept (a short topic name like "launchd agents") so their knowledge map updates.
 5. 3 to 5 takeaways: the notes they'd want to keep.
+6. buildsOn: the exact titles of any finished lessons (from the list above) this one leans on; [] if none.
 
 "answer" is always the 0-based index of the right choice. Vary which index is right.
 ${problem ? `\n${problem}\n` : ""}
@@ -163,10 +202,10 @@ Reply with only JSON:
   {"kind": "practice", "title": "...", "task": "...", "hint": "...", "accept": ["^\\\\s*launchctl\\\\s+kickstart\\\\s+-k\\\\s+gui/"], "solution": "...", "explain": "...", "keyPoint": "..."}
  ],
  "quiz": [{"q": "...", "choices": ["..", "..", ".."], "answer": 2, "why": "...", "concept": "..."}],
- "takeaways": ["..."]}`;
+ "takeaways": ["..."], "buildsOn": []}`;
 }
 
-export function checkPrompt(title: string, step: { task: string; solution: string; explain: string }, answer: string) {
+export function checkPrompt(title: string, step: { task: string; solution: string; explain: string }, answer: string, stage: 1 | 2 | 3 = 1) {
   return `You are Galaxy Teach, checking a hands-on step in a lesson on ${title}.
 
 The task: ${step.task}
@@ -176,7 +215,7 @@ Why it works: ${step.explain}
 What the learner typed:
 ${answer}
 
-Is theirs correct, or would it do the job just as well (another valid form counts)? Reply with only JSON: {"ok": true or false, "feedback": "one or two encouraging sentences: what's right, and exactly what to change if it isn't"}`;
+Is theirs correct, or would it do the job just as well (another valid form counts)?${stage === 1 ? " They're a beginner: say it in plain everyday words, no jargon." : ""} Reply with only JSON: {"ok": true or false, "feedback": "one or two encouraging sentences: what's right, and exactly what to change if it isn't"}`;
 }
 
 export function stylePrompt(lesson: Lesson, before: string) {

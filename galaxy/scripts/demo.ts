@@ -344,7 +344,7 @@ link.requestApproval("zenith", { title: "Spend $12 on a domain for the tennis si
   }
   at(70);
   const going = t.ask("you", { request: "launchctl kickstart" });
-  t.write("teach", going.id, lesson("What `launchctl kickstart` actually does"));
+  t.write("teach", going.id, { ...lesson("What `launchctl kickstart` actually does"), buildsOn: ["What a port is (and why 7740 is taken)", "Making a script runnable with chmod +x"] });
   t.progress("you", going.id, { position: 2, answers: { s0: 1 } });
   t.addNote("you", { lessonId: going.id, text: "Comet is its own user, so restart it from that user, not mine." });
   t.setStyle("teach", { text: "Examples from their own Galaxy land best; start with the command, then the idea.\nKeep sections short; they skim long paragraphs.\nSlow down on users and permissions (env vars, other Mac users): bring them back for review." });

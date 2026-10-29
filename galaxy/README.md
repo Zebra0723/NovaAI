@@ -112,6 +112,11 @@ Teach offers you a lesson on it straight away.
   own GalaxyAI, real-world scenarios set in it, hands-on steps you type into a practice terminal (nothing
   is run; Claude checks answers that aren't an exact match), and a quiz. Stop anywhere; when you come back
   you get the choice of a one-minute recap.
+- **Plain words first:** your first lessons use everyday words, short sentences and no jargon. After three
+  finished lessons it starts using what you learnt in them (with a quick reminder), and after eight it
+  builds on everything you know, linking new ideas to your past lessons by name (*Builds on* at the top
+  of a lesson). It only ever refers to lessons you really finished, and steps back to plainer words if
+  your recent quizzes went badly.
 - **It learns how you learn:** quiz results move each topic between *new*, *getting there* and *solid*,
   the takeaways become notes, and after every lesson Teach updates what it knows about how you learn best.
 - **Where:** the Teach space in Galaxy Link, or **Galaxy Teach.app** (it starts with your Mac, lives in the

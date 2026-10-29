@@ -1077,3 +1077,8 @@ code { font: 400 .92em var(--mono); background: var(--paper-2); padding: 1px 5px
 .chip svg { width: 11px; height: 11px; }
 .chip:has(svg)::before { display: none; }
 .offer-actions { flex-wrap: wrap; }
+.teach-hero .pill svg { width: 13px; height: 13px; color: var(--teach); }
+.builds-on { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+.builds-on .label { margin-right: 4px; }
+.builds-on a.chip { text-decoration: none; }
+.builds-on a.chip:hover { background: color-mix(in srgb, var(--teach) 14%, #fff); }

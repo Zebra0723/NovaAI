@@ -37,6 +37,17 @@ function watcherPill() {
   return `<span class="pill"><span class="lamp on live" style="--c:var(--teach)"></span>Watching ${esc(apps.slice(0, -1).join(", "))}${apps.length > 1 ? " and " : ""}${esc(apps.at(-1))}</span>`;
 }
 
+/** How plainly Teach is writing for you, and that it builds on your lessons as you go. */
+const STAGES = {
+  1: ["Plain words", "Everyday words and no jargon while you're starting out. As you finish lessons, Teach starts building on them."],
+  2: ["Building on your lessons", "Still plain, but it now uses what you learnt in your finished lessons, with a quick reminder."],
+  3: ["Building on everything you know", "It connects each new idea to your earlier lessons and goes a bit deeper."],
+};
+function stagePill() {
+  const st = STAGES[o()?.stage ?? 1];
+  return `<span class="pill" title="${esc(st[1])}">${icon("sparkle")}${esc(st[0])}</span>`;
+}
+
 function headline() {
   const s = o()?.stats;
   const offers = o()?.offers?.length ?? 0;
@@ -115,7 +126,7 @@ const home = {
           <div class="label date">Galaxy Teach · ${x?.teachOnline ? "ready" : "not running"}</div>
           <h1>${headline()}</h1>
           <div class="story">When a command, a bit of code or a new idea comes up while you work, Teach offers you a lesson on it straight away. It's written by Claude for you, with examples from your own GalaxyAI. <b>Your screen is never recorded or saved:</b> Teach only keeps the topics, your lessons and your notes.</div>
-          <div class="pills">${watcherPill()}${x?.status && !x.status.ok ? `<span class="pill attention">Can't reach Claude: ${esc(x.status.reason)}</span>` : ""}</div>
+          <div class="pills">${watcherPill()}${stagePill()}${x?.status && !x.status.ok ? `<span class="pill attention">Can't reach Claude: ${esc(x.status.reason)}</span>` : ""}</div>
         </div>
         <div class="teach-stats">
           <div><b>${s?.streak ?? 0}</b><span>day streak</span></div>
@@ -396,6 +407,7 @@ function playerHTML() {
       <div class="label">${l ? `${l.minutes} minutes${l.request ? " · you asked" : l.why ? " · came up while you worked" : ""}` : ""}</div>
       <h1>${l ? inline(l.title) : ""}</h1>
       ${c?.hook && P.pos === 0 && !P.recap ? `<p class="hook">${inline(c.hook)}</p>` : ""}
+      ${c?.buildsOn?.length && !P.recap ? `<div class="builds-on"><span class="label">Builds on</span>${c.buildsOn.map((t) => { const past = o()?.lessons?.find((x) => x.title === t); return past ? `<a class="chip tint" href="#/teach/lesson/${past.id}">${inline(t)}</a>` : `<span class="chip tint">${inline(t)}</span>`; }).join("")}</div>` : ""}
       ${c && !P.recap ? stepsBar(c) : ""}
     </header>
     <div class="lesson-grid">

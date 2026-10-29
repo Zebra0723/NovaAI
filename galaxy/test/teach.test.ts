@@ -3,7 +3,8 @@ import { Link } from "../src/link";
 import { PresenceReader } from "../src/presence";
 import { handle } from "../src/server";
 import { Store } from "../src/store";
-import { tidyLesson } from "../src/teach";
+import { languageStage, tidyLesson } from "../src/teach";
+import { languageGuide, lessonPrompt } from "../src/teach/tutor";
 import { Tutor } from "../src/teach/tutor";
 
 let store: Store;
@@ -94,6 +95,37 @@ describe("Galaxy Teach", () => {
     const asked = await as("you")<any>("POST", "/v1/teach/lessons", { request: "ports", later: true });
     expect(asked.saved).toBe(true);
     expect((await as("you")<any>("PUT", `/v1/teach/lessons/${asked.id}/saved`, { saved: false })).saved).toBe(false);
+  });
+
+  test("plain words at first, then it builds on what you've learnt, and steps back if quizzes go badly", async () => {
+    expect(languageStage(0, null)).toBe(1);
+    expect(languageStage(3, 80)).toBe(2);
+    expect(languageStage(9, 90)).toBe(3);
+    expect(languageStage(9, 40)).toBe(2);
+    expect(languageGuide(1)).toContain("No jargon");
+
+    // The first lesson's prompt says to assume nothing.
+    const first = await as("you")<any>("POST", "/v1/teach/lessons", { request: "ports" });
+    const ctx0 = await as("teach")<any>("GET", "/v1/teach/context");
+    expect(ctx0.stage).toBe(1);
+    expect(lessonPrompt(first, ctx0)).toContain("assume no background at all");
+
+    // Finish three lessons and the next one is told what they learnt, and may build on it.
+    for (const topic of ["ports", "chmod", "git pull"]) {
+      const l = await as("you")<any>("POST", "/v1/teach/lessons", { request: topic });
+      await as("teach")("PUT", `/v1/teach/lessons/${l.id}/content`, { content: { ...LESSON, title: `Lesson on ${topic}` } });
+      await as("you")("POST", `/v1/teach/lessons/${l.id}/finish`, { answers: { q0: 0, q1: 0, q2: 0 } });
+    }
+    const ctx = await as("teach")<any>("GET", "/v1/teach/context");
+    expect(ctx.stage).toBe(2);
+    const prompt = lessonPrompt({ ...first, title: "lsof -i" }, ctx);
+    expect(prompt).toContain('"Lesson on chmod"');
+    expect(prompt).toContain("launchctl kickstart -k gui/$(id -u)/LABEL restarts an agent.");
+
+    // It can only claim to build on lessons that were really finished.
+    const next = await as("you")<any>("POST", "/v1/teach/lessons", { request: "lsof -i" });
+    const written = await as("teach")<any>("PUT", `/v1/teach/lessons/${next.id}/content`, { content: { ...LESSON, buildsOn: ["Lesson on ports", "A lesson that never happened"] } });
+    expect(written.content.buildsOn).toEqual(["Lesson on ports"]);
   });
 
   test("a lesson must hold together to be accepted", () => {
