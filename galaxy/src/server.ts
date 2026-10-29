@@ -214,8 +214,11 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     await teach.waitForChange(Number(url.searchParams.get("since") ?? 0) || 0, url.searchParams.has("since") ? wait() : 0);
     return json({ version: teach.version, offers: teach.pendingOffers() });
   }
-  const offer = path.match(/^\/v1\/teach\/offers\/([\w-]+)\/(begin|skip)$/);
-  if (offer && method === "POST") return json(offer[2] === "begin" ? teach.begin(needBody(), offer[1]!) : teach.skip(needBody(), offer[1]!));
+  const offer = path.match(/^\/v1\/teach\/offers\/([\w-]+)\/(begin|later|skip)$/);
+  if (offer && method === "POST") {
+    const [, oid, act] = offer as unknown as [string, string, string];
+    return json(act === "skip" ? teach.skip(needBody(), oid) : teach.begin(needBody(), oid, act === "later"));
+  }
   if (path === "/v1/teach/lessons" && method === "POST") return json(teach.ask(needBody(), await input()), 201);
   if (path === "/v1/teach/context" && method === "GET") return json(teach.context());
   if (path === "/v1/teach/style" && method === "PUT") return json(teach.setStyle(needBody(), await input()));
@@ -233,7 +236,7 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     return json(c);
   }
   if (check && method === "PUT") return json(teach.answerCheck(needBody(), check[1]!, await input()));
-  const tlesson = path.match(/^\/v1\/teach\/lessons\/([\w-]+)(?:\/(content|fail|retry|progress|finish|checks))?$/);
+  const tlesson = path.match(/^\/v1\/teach\/lessons\/([\w-]+)(?:\/(content|fail|retry|progress|finish|checks|saved))?$/);
   if (tlesson) {
     const [, lid, part] = tlesson as unknown as [string, string, string | undefined];
     if (!part && method === "GET") {
@@ -247,6 +250,7 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     if (part === "retry" && method === "POST") return json(teach.retry(needBody(), lid));
     if (part === "progress" && method === "PUT") return json(teach.progress(needBody(), lid, await input()));
     if (part === "finish" && method === "POST") return json(teach.finish(needBody(), lid, await input()));
+    if (part === "saved" && method === "PUT") return json(teach.setSaved(needBody(), lid, (await input()).saved !== false));
     if (part === "checks" && method === "POST") return json(teach.askCheck(needBody(), lid, await input()), 201);
   }
 

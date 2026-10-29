@@ -159,7 +159,7 @@ function chrome() {
     const recent = (state.teach?.lessons ?? []).filter((l) => l.status !== "failed").slice(0, 8);
     $("#roster").innerHTML = recent.length
       ? recent
-          .map((l) => `<a class="who${current === "lesson" && param === l.id ? " on" : ""}" href="#/teach/lesson/${l.id}" data-body="teach"><span class="nm">${esc(l.title.replace(/`/g, ""))}</span><span class="state">${l.status === "done" ? `${l.score ?? "—"}` : l.status === "writing" ? "writing" : l.position ? "going" : "new"}</span></a>`)
+          .map((l) => `<a class="who${current === "lesson" && param === l.id ? " on" : ""}" href="#/teach/lesson/${l.id}" data-body="teach"><span class="nm">${esc(l.title.replace(/`/g, ""))}</span><span class="state">${l.status === "done" ? `${l.score ?? "—"}` : l.position ? "going" : l.saved ? "saved" : l.status === "writing" ? "writing" : "new"}</span></a>`)
           .join("")
       : `<div class="muted small" style="padding:6px 12px">Your lessons show up here.</div>`;
   } else if (TRAINER_APP) {

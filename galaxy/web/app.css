@@ -1072,3 +1072,8 @@ code { font: 400 .92em var(--mono); background: var(--paper-2); padding: 1px 5px
 [data-nav="teach"] .live-count { background: var(--teach); }
 .offer h3 code { font-size: .7em; }
 .lesson-head h1 code { font-size: .62em; vertical-align: .08em; }
+.btn.quiet { border-color: transparent; background: none; color: var(--ink-3); }
+.btn.quiet:hover { color: var(--ink); background: var(--hover); }
+.chip svg { width: 11px; height: 11px; }
+.chip:has(svg)::before { display: none; }
+.offer-actions { flex-wrap: wrap; }

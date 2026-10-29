@@ -51,7 +51,7 @@ function offerCard(x) {
     <div class="offer-top"><span class="chip tint">${esc(APP_NAMES[x.app] ?? (x.app || "Your screen"))}</span><span class="muted small">${esc(ago(x.createdAt))} · ${x.minutes} min</span></div>
     <h3>${inline(x.title)}</h3>
     ${x.why ? `<p>${esc(x.why)}</p>` : ""}
-    <div class="offer-actions"><button class="btn primary" data-begin="${x.id}">${icon("play")}Begin lesson</button><button class="btn" data-skip="${x.id}">Skip</button></div>
+    <div class="offer-actions"><button class="btn primary" data-begin="${x.id}">${icon("play")}Begin lesson</button><button class="btn" data-later="${x.id}" title="It's written now and waits in Saved for later">${icon("bookmark")}Save for later</button><button class="btn quiet" data-skip="${x.id}">Skip</button></div>
   </div>`;
 }
 
@@ -66,6 +66,8 @@ function lessonRow(l) {
           ? `<span class="score-pill ${l.score >= 80 ? "good" : l.score >= 50 ? "warn" : "bad"}">${l.score ?? "—"}</span>`
           : l.position
             ? `<span class="chip tint">${pct}%</span>`
+            : l.saved
+              ? `<span class="chip tint">${icon("bookmark")}Saved</span>`
             : `<span class="chip">New</span>`;
   return `<a class="lesson-row" href="#/teach/lesson/${l.id}" data-body="teach">
     <div class="lr-main"><b>${inline(l.title)}</b><span>${l.minutes} min · ${esc(l.status === "done" ? `finished ${ago(l.finishedAt)}` : l.lastAt ? `last opened ${ago(l.lastAt)}` : `added ${ago(l.createdAt)}`)}</span>
@@ -104,7 +106,8 @@ const home = {
     const x = o();
     const lessons = x?.lessons ?? [];
     const going = lessons.filter((l) => l.status === "ready" && l.position > 0);
-    const rest = lessons.filter((l) => !going.includes(l));
+    const later = lessons.filter((l) => l.saved && !going.includes(l) && l.status !== "done");
+    const rest = lessons.filter((l) => !going.includes(l) && !later.includes(l));
     const s = x?.stats;
     return `<div class="page teach-page" data-body="teach">
       <section class="hero teach-hero">
@@ -124,6 +127,7 @@ const home = {
 
       <form class="ask card" id="ask-form">
         ${icon("sparkle") || ""}<input id="ask" placeholder="Teach me about… (ports, git rebase, what launchd does, async/await)" autocomplete="off">
+        <button class="btn" type="button" id="ask-later" title="It's written now and waits in Saved for later">Save for later</button>
         <button class="btn primary" type="submit">Make a lesson</button>
       </form>
 
@@ -132,6 +136,7 @@ const home = {
       <div class="teach-grid section">
         <div>
           ${going.length ? `<div class="section-head"><h2>Carry on</h2></div><div class="card lessons-list">${going.map(lessonRow).join("")}</div><div style="height:28px"></div>` : ""}
+          ${later.length ? `<div class="section-head"><h2>Saved for later</h2><span class="muted small">Ready when you are</span></div><div class="card lessons-list">${later.map(lessonRow).join("")}</div><div style="height:28px"></div>` : ""}
           <div class="section-head"><h2>Your lessons</h2><span class="muted small">${lessons.length ? `${lessons.length} in all` : ""}</span></div>
           <div class="card lessons-list">${rest.length ? rest.map(lessonRow).join("") : `<div class="empty"><b>No lessons yet</b>Begin one from a notification, or ask for one above.</div>`}</div>
         </div>
@@ -189,6 +194,33 @@ const home = {
         } catch (error) {
           toast(error.message);
           begin.disabled = false;
+        }
+        return;
+      }
+      if (e.target.closest("#ask-later")) {
+        const input = $("#ask");
+        const request = input.value.trim();
+        if (!request) return toast("Type what you'd like to learn first");
+        try {
+          await api.teachAsk(request, true);
+          input.value = "";
+          toast("Saved for later. It'll be ready in a minute");
+          poke();
+        } catch (error) {
+          toast(error.message);
+        }
+        return;
+      }
+      const later = e.target.closest("[data-later]");
+      if (later) {
+        later.disabled = true;
+        try {
+          await api.teachLater(later.dataset.later);
+          toast("Saved for later");
+          poke();
+        } catch (error) {
+          toast(error.message);
+          later.disabled = false;
         }
         return;
       }
@@ -373,6 +405,7 @@ function playerHTML() {
           <form id="note-form"><textarea id="note" rows="2" placeholder="Jot something down…"></textarea><button class="btn sm" type="submit">Save note</button></form>
           <div id="lesson-notes">${notesHTML(notesFor(P.id), 20)}</div>
         </div>
+        ${l && l.status !== "done" && l.status !== "failed" ? (l.saved ? `<button class="btn sm" id="unsave">${icon("bookmark")}Saved for later · remove</button>` : `<button class="btn sm" id="save-later">${icon("bookmark")}Save for later</button>`) : ""}
         ${l && l.status !== "writing" ? `<button class="btn danger sm" id="delete-lesson">${icon("trash")}Delete lesson</button>` : ""}
       </aside>
     </div>
@@ -524,6 +557,22 @@ const player = {
       if (del) {
         await api.teachDeleteNote(del.dataset.noteDel).catch((error) => toast(error.message));
         return poke();
+      }
+      if (e.target.closest("#save-later")) {
+        clearTimeout(saveTimer);
+        await api.teachSaved(P.id, true).catch((error) => toast(error.message));
+        toast("Saved for later. It's on your Lessons page");
+        poke();
+        location.hash = "#/teach";
+        return;
+      }
+      if (e.target.closest("#unsave")) {
+        P.lesson = (await api.teachSaved(P.id, false).catch((error) => (toast(error.message), null))) ?? P.lesson;
+        poke();
+        const tmp = document.createElement("div");
+        tmp.innerHTML = playerHTML();
+        $(".lesson-side").replaceWith(tmp.querySelector(".lesson-side"));
+        return;
       }
       if (e.target.closest("#delete-lesson")) {
         if (!confirm("Delete this lesson? Its notes stay.")) return;

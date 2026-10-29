@@ -78,6 +78,24 @@ describe("Galaxy Teach", () => {
     expect(await as("teach")("POST", "/v1/teach/offers", { topic: "chmod" })).toBeNull();
   });
 
+  test("save for later: the lesson is written now and waits until you start it", async () => {
+    const o = await as("teach")<any>("POST", "/v1/teach/offers", { topic: "lsof -i", title: "lsof -i", minutes: 12 });
+    const l = await as("you")<any>("POST", `/v1/teach/offers/${o.id}/later`, {});
+    expect(l).toMatchObject({ status: "writing", saved: true });
+    expect((await link.inbox("teach", 0)).map((i) => i.text)).toContain(`write:${l.id}`);
+    expect((await as("you")<any>("GET", "/v1/teach/offers")).offers).toHaveLength(0);
+    expect(await as("teach")("POST", "/v1/teach/offers", { topic: "lsof -i" })).toBeNull(); // not offered again while saved
+    await as("teach")("PUT", `/v1/teach/lessons/${l.id}/content`, { content: LESSON });
+    expect((await as("you")<any>("GET", `/v1/teach/lessons/${l.id}`)).saved).toBe(true);
+    // Starting it takes it out of Saved for later.
+    await as("you")("PUT", `/v1/teach/lessons/${l.id}/progress`, { position: 1 });
+    expect((await as("you")<any>("GET", `/v1/teach/lessons/${l.id}`)).saved).toBe(false);
+    // And you can save any lesson for later yourself, including one you asked for.
+    const asked = await as("you")<any>("POST", "/v1/teach/lessons", { request: "ports", later: true });
+    expect(asked.saved).toBe(true);
+    expect((await as("you")<any>("PUT", `/v1/teach/lessons/${asked.id}/saved`, { saved: false })).saved).toBe(false);
+  });
+
   test("a lesson must hold together to be accepted", () => {
     expect(tidyLesson({ title: "x", sections: [], quiz: [] })).toBeNull();
     const t = tidyLesson({ ...LESSON, quiz: [...LESSON.quiz, { q: "bad", choices: ["a"], answer: 3 }] })!;

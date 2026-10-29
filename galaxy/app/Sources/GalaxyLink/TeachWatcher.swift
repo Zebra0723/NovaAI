@@ -39,8 +39,9 @@ final class TeachWatcher: NSObject, UNUserNotificationCenterDelegate {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         let begin = UNNotificationAction(identifier: "BEGIN", title: "Begin lesson", options: [.foreground])
+        let later = UNNotificationAction(identifier: "LATER", title: "Save for later", options: [])
         let skip = UNNotificationAction(identifier: "SKIP", title: "Skip", options: [])
-        center.setNotificationCategories([UNNotificationCategory(identifier: "OFFER", actions: [begin, skip], intentIdentifiers: [], options: [])])
+        center.setNotificationCategories([UNNotificationCategory(identifier: "OFFER", actions: [begin, later, skip], intentIdentifiers: [], options: [])])
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
         // Start with the Mac, so it's watching without you opening anything.
@@ -218,6 +219,8 @@ final class TeachWatcher: NSObject, UNUserNotificationCenterDelegate {
         Task { @MainActor in
             if action == "SKIP" {
                 _ = await TeachAPI.call("POST", "/v1/teach/offers/\(id)/skip", [:])
+            } else if action == "LATER" {
+                _ = await TeachAPI.call("POST", "/v1/teach/offers/\(id)/later", [:]) // written now, waiting in Saved for later
             } else if action == "BEGIN" {
                 let lesson = await TeachAPI.call("POST", "/v1/teach/offers/\(id)/begin", [:]) as? [String: Any]
                 self.open(lesson?["id"] as? String)

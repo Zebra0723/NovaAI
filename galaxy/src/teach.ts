@@ -36,7 +36,7 @@ export interface Offer {
   minutes: number;
   /** Which app it came up in. */
   app: string;
-  status: "offered" | "skipped" | "begun" | "expired";
+  status: "offered" | "skipped" | "begun" | "saved" | "expired";
   lessonId: string;
   createdAt: number;
 }
@@ -75,6 +75,8 @@ export interface Lesson {
   why: string;
   content: LessonContent | null;
   error: string;
+  /** Saved for later: written and waiting, not started yet. */
+  saved: boolean;
   /** The section you're on; sections.length means the quiz. */
   position: number;
   /** Your answers so far, by step key ("s3", "q2"): a choice index or what you typed. */
@@ -278,6 +280,8 @@ export class Teach {
     private readonly store: Store = link.store,
   ) {
     this.store.db.exec(SCHEMA);
+    const columns = (this.store.db.query("pragma table_info(teach_lessons)").all() as any[]).map((c) => c.name);
+    if (!columns.includes("saved")) this.store.db.exec("alter table teach_lessons add column saved integer not null default 0");
   }
 
   private get db() {
@@ -435,33 +439,48 @@ export class Teach {
     return this.offer(id)!;
   }
 
-  /** You press Begin: Teach starts writing the lesson. */
-  begin(who: BodyID, id: string): Lesson {
+  /**
+   * You press Begin: Teach starts writing the lesson. With `later`, it's written all the
+   * same and kept in Saved for later, for whenever you want it.
+   */
+  begin(who: BodyID, id: string, later = false): Lesson {
     this.needYou(who);
     const o = this.offer(id);
     if (!o) throw new TeachError(404, "no such offer");
-    if (o.status === "begun" && o.lessonId) return this.lesson(o.lessonId)!;
+    if ((o.status === "begun" || o.status === "saved") && o.lessonId) {
+      if (!later) this.db.query("update teach_lessons set saved = 0 where id = ?").run(o.lessonId);
+      return this.lesson(o.lessonId)!;
+    }
     if (o.status !== "offered") throw new TeachError(409, "that offer has gone");
-    const lesson = this.newLesson(this.topic(o.topic)?.title ?? o.title, { title: o.title, minutes: o.minutes, why: o.why });
-    this.db.query("update teach_offers set status = 'begun', lesson_id = ?, decided_at = ? where id = ?").run(lesson.id, this.now(), id);
+    const lesson = this.newLesson(this.topic(o.topic)?.title ?? o.title, { title: o.title, minutes: o.minutes, why: o.why, later });
+    this.db.query("update teach_offers set status = ?, lesson_id = ?, decided_at = ? where id = ?").run(later ? "saved" : "begun", lesson.id, this.now(), id);
     this.changed();
     return lesson;
   }
 
   /** You ask for a lesson on anything: "teach me about ports". */
-  ask(who: BodyID, input: { request?: unknown }): Lesson {
+  ask(who: BodyID, input: { request?: unknown; later?: unknown }): Lesson {
     this.needYou(who);
     const request = clean(input.request, 300);
     if (!request) throw new TeachError(400, "what would you like to learn?");
-    return this.newLesson(request, { title: request, minutes: 0, why: "", request });
+    return this.newLesson(request, { title: request, minutes: 0, why: "", request, later: input.later === true });
   }
 
-  private newLesson(topic: string, o: { title: string; minutes: number; why: string; request?: string }): Lesson {
+  /** You save a lesson for later, or take it out of Saved for later. */
+  setSaved(who: BodyID, id: string, saved: boolean): Lesson {
+    this.needYou(who);
+    if (!this.lesson(id)) throw new TeachError(404, "no such lesson");
+    this.db.query("update teach_lessons set saved = ? where id = ? and status != 'done'").run(saved ? 1 : 0, id);
+    this.changed();
+    return this.lesson(id)!;
+  }
+
+  private newLesson(topic: string, o: { title: string; minutes: number; why: string; request?: string; later?: boolean }): Lesson {
     const t = this.touchTopic(topic, { lessons: 1 });
     const id = newID("l");
     this.db
-      .query("insert into teach_lessons (id, topic, title, minutes, status, request, why, created_at) values (?, ?, ?, ?, 'writing', ?, ?, ?)")
-      .run(id, t.key, clean(o.title, 140), o.minutes || 15, o.request ?? "", o.why, this.now());
+      .query("insert into teach_lessons (id, topic, title, minutes, status, request, why, created_at, saved) values (?, ?, ?, ?, 'writing', ?, ?, ?, ?)")
+      .run(id, t.key, clean(o.title, 140), o.minutes || 15, o.request ?? "", o.why, this.now(), o.later ? 1 : 0);
     this.link.postInbox({ body: TEACH, kind: "message", taskId: id, replyTo: "", text: `write:${id}` });
     this.changed();
     return this.lesson(id)!;
@@ -488,6 +507,7 @@ export class Teach {
       why: r.why,
       content,
       error: r.error,
+      saved: !!r.saved,
       position: r.position,
       answers,
       score: r.score ?? null,
@@ -551,7 +571,7 @@ export class Teach {
     const text = JSON.stringify(answers);
     if (text.length > 60_000) throw new TeachError(413, "too many answers");
     this.db
-      .query("update teach_lessons set position = ?, answers = ?, started_at = coalesce(nullif(started_at, 0), ?), last_at = ? where id = ?")
+      .query("update teach_lessons set position = ?, answers = ?, saved = 0, started_at = coalesce(nullif(started_at, 0), ?), last_at = ? where id = ?")
       .run(position, text, this.now(), this.now(), id);
     this.changed();
     return this.lesson(id)!;

@@ -105,7 +105,8 @@ Teach offers you a lesson on it straight away.
   number) and hands them to Link, which keeps them **in memory only** until Teach turns them into a topic
   name. No screenshots, no screen text, no logs. What's saved: topics, your lessons, your progress and
   your notes.
-- **Notifications:** *New: what `lsof -i` does · 12 min*, with **Begin lesson** and **Skip**. Skip a topic
+- **Notifications:** *New: what `lsof -i` does · 12 min*, with **Begin lesson**, **Save for later** (it's
+  written straight away and waits under *Saved for later* until you start it) and **Skip**. Skip a topic
   twice and it's never offered again; topics you know solidly aren't offered either.
 - **Lessons** (10 to 30 minutes, written by Claude for you): engaging explanations with examples from your
   own GalaxyAI, real-world scenarios set in it, hands-on steps you type into a practice terminal (nothing
