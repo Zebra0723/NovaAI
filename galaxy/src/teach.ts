@@ -769,17 +769,19 @@ export class Teach {
   }
 
   /** The watcher says it's watching (and in which apps), or that it can't (no permission). */
-  setWatcher(who: BodyID, input: { watching?: unknown; apps?: unknown; problem?: unknown }) {
+  setWatcher(who: BodyID, input: { watching?: unknown; apps?: unknown; problem?: unknown; notifications?: unknown }) {
     if (who !== "you" && who !== TEACH) throw new TeachError(403, "only the watcher can say that");
     const w = {
       watching: input.watching === true,
       apps: (Array.isArray(input.apps) ? input.apps : []).map((a: unknown) => clean(a, 40)).filter(Boolean).slice(0, 8),
       problem: clean(input.problem, 300),
+      // False when macOS isn't letting Galaxy Teach show notifications.
+      notifications: input.notifications !== false,
       at: this.now(),
     };
     const before = this.meta<any>("watcher");
     this.setMeta("watcher", w);
-    if (!before || before.watching !== w.watching || before.problem !== w.problem) this.changed();
+    if (!before || before.watching !== w.watching || before.problem !== w.problem || before.notifications !== w.notifications) this.changed();
     return w;
   }
 
@@ -787,7 +789,7 @@ export class Teach {
   overview() {
     const lessons = this.lessons();
     const topics = this.topics();
-    const watcher = this.meta<{ watching: boolean; apps: string[]; problem: string; at: number }>("watcher");
+    const watcher = this.meta<{ watching: boolean; apps: string[]; problem: string; notifications?: boolean; at: number }>("watcher");
     const done = lessons.filter((l) => l.status === "done");
     const days = new Set(done.map((l) => new Date(l.finishedAt).toDateString()));
     let streak = 0;

@@ -34,6 +34,12 @@ final class TeachWatcher: NSObject, UNUserNotificationCenterDelegate {
     private var notified = Set(UserDefaults.standard.stringArray(forKey: "teachNotified") ?? [])
     private var offersVersion = 0
     private var problem = ""
+    /// Each lesson's status as last seen, so "ready" is announced once, when it changes.
+    private var lessonStatus: [String: String]? = nil
+    /// Whether macOS lets Galaxy Teach show notifications. Nil until it has said.
+    private(set) var notificationsAllowed: Bool?
+    /// Offers waiting for Begin or Skip, for the count on the menu-bar icon.
+    private(set) var waiting = 0
 
     func start() {
         let center = UNUserNotificationCenter.current()
@@ -41,8 +47,18 @@ final class TeachWatcher: NSObject, UNUserNotificationCenterDelegate {
         let begin = UNNotificationAction(identifier: "BEGIN", title: "Begin lesson", options: [.foreground])
         let later = UNNotificationAction(identifier: "LATER", title: "Save for later", options: [])
         let skip = UNNotificationAction(identifier: "SKIP", title: "Skip", options: [])
-        center.setNotificationCategories([UNNotificationCategory(identifier: "OFFER", actions: [begin, later, skip], intentIdentifiers: [], options: [])])
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        let startNow = UNNotificationAction(identifier: "START", title: "Start now", options: [.foreground])
+        center.setNotificationCategories([
+            UNNotificationCategory(identifier: "OFFER", actions: [begin, later, skip], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: "READY", actions: [startNow], intentIdentifiers: [], options: []),
+        ])
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            Task { @MainActor in
+                self.notificationsAllowed = granted
+                self.onChange()
+                await self.report()
+            }
+        }
 
         // Start with the Mac, so it's watching without you opening anything.
         if SMAppService.mainApp.status != .enabled { try? SMAppService.mainApp.register() }
@@ -51,7 +67,7 @@ final class TeachWatcher: NSObject, UNUserNotificationCenterDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.look() }
         }
-        Task { await offersLoop() }
+        Task { await teachLoop() }
         Task {
             while true {
                 await report()
@@ -70,6 +86,7 @@ final class TeachWatcher: NSObject, UNUserNotificationCenterDelegate {
     var statusLine: String {
         if paused { return "Paused" }
         if !problem.isEmpty { return problem }
+        if notificationsAllowed == false { return "Notifications are off: System Settings → Notifications → Galaxy Teach" }
         return "Watching Terminal, Claude and VS Code"
     }
 
@@ -114,6 +131,7 @@ final class TeachWatcher: NSObject, UNUserNotificationCenterDelegate {
             "watching": !paused && problem.isEmpty,
             "apps": ["Terminal", "Claude", "claude.ai", "Code"],
             "problem": paused ? "" : problem,
+            "notifications": notificationsAllowed ?? true,
         ])
     }
 
@@ -180,31 +198,77 @@ final class TeachWatcher: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: - Offers and notifications
 
-    private func offersLoop() async {
+    /// Follows Teach: a notification for every new offer, and one when a lesson you began or saved is written.
+    private func teachLoop() async {
         while true {
-            guard let reply = await TeachAPI.call("GET", "/v1/teach/offers?since=\(offersVersion)&wait=25", nil, timeout: 40) as? [String: Any] else {
+            guard let o = await TeachAPI.call("GET", "/v1/teach?since=\(offersVersion)&wait=25", nil, timeout: 40) as? [String: Any] else {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 continue
             }
-            offersVersion = reply["version"] as? Int ?? offersVersion
-            for offer in reply["offers"] as? [[String: Any]] ?? [] {
+            offersVersion = o["version"] as? Int ?? offersVersion
+            let offers = o["offers"] as? [[String: Any]] ?? []
+            for offer in offers {
                 guard let id = offer["id"] as? String, !notified.contains(id) else { continue }
                 notified.insert(id)
-                notify(id: id, title: offer["title"] as? String ?? "Something new", why: offer["why"] as? String ?? "", minutes: offer["minutes"] as? Int ?? 15)
+                let title = (offer["title"] as? String ?? "Something new").replacingOccurrences(of: "`", with: "")
+                post(id: id, title: "New: \(title)", subtitle: "\(offer["minutes"] as? Int ?? 15) min lesson",
+                     body: offer["why"] as? String ?? "", category: "OFFER", info: ["offer": id])
             }
             UserDefaults.standard.set(Array(notified.suffix(300)), forKey: "teachNotified")
+
+            var now: [String: String] = [:]
+            for lesson in o["lessons"] as? [[String: Any]] ?? [] {
+                guard let id = lesson["id"] as? String, let status = lesson["status"] as? String else { continue }
+                now[id] = status
+                // Written while you waited (or saved it for later): it's ready to start.
+                if let before = lessonStatus?[id], before == "writing", status == "ready" {
+                    let title = (lesson["title"] as? String ?? "Your lesson").replacingOccurrences(of: "`", with: "")
+                    let saved = lesson["saved"] as? Bool ?? false
+                    post(id: "ready-\(id)", title: "Ready: \(title)", subtitle: "\(lesson["minutes"] as? Int ?? 15) min lesson",
+                         body: saved ? "Saved for later. Start it whenever you like." : "Your lesson is written and waiting for you.",
+                         category: "READY", info: ["lesson": id])
+                }
+            }
+            lessonStatus = now
+            if waiting != offers.count {
+                waiting = offers.count
+                onChange()
+            }
         }
     }
 
-    private func notify(id: String, title: String, why: String, minutes: Int) {
+    /// A Mac notification. If macOS won't let Galaxy Teach show its own, a plain one still gets through.
+    private func post(id: String, title: String, subtitle: String, body: String, category: String, info: [String: String]) {
         let content = UNMutableNotificationContent()
-        content.title = "New: \(title.replacingOccurrences(of: "`", with: ""))"
-        content.subtitle = "\(minutes) min lesson"
-        content.body = why
-        content.categoryIdentifier = "OFFER"
-        content.userInfo = ["offer": id]
+        content.title = title
+        content.subtitle = subtitle
+        content.body = body
+        content.categoryIdentifier = category
+        content.userInfo = info
         content.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        if notificationsAllowed == false {
+            Self.plainNotification(title: title, body: [subtitle, body].filter { !$0.isEmpty }.joined(separator: " · "))
+            return
+        }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil)) { error in
+            guard error != nil else { return }
+            Task { @MainActor in
+                self.notificationsAllowed = false
+                self.onChange()
+                Self.plainNotification(title: title, body: [subtitle, body].filter { !$0.isEmpty }.joined(separator: " · "))
+            }
+        }
+    }
+
+    /// The system's own notification, through osascript (so it doesn't depend on Galaxy Teach's
+    /// own permission): no buttons, but it always shows. Click Open Galaxy Teach in the menu bar.
+    static func plainNotification(title: String, body: String) {
+        let esc = { (s: String) in s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") }
+        let script = "display notification \"\(esc(body))\" with title \"Galaxy Teach\" subtitle \"\(esc(title))\" sound name \"Glass\""
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        try? process.run()
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
@@ -215,9 +279,12 @@ final class TeachWatcher: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.content.userInfo["offer"] as? String ?? ""
+        let lesson = response.notification.request.content.userInfo["lesson"] as? String
         let action = response.actionIdentifier
         Task { @MainActor in
-            if action == "SKIP" {
+            if let lesson {
+                self.open(lesson) // a lesson that's ready: Start now, or the notification itself
+            } else if action == "SKIP" {
                 _ = await TeachAPI.call("POST", "/v1/teach/offers/\(id)/skip", [:])
             } else if action == "LATER" {
                 _ = await TeachAPI.call("POST", "/v1/teach/offers/\(id)/later", [:]) // written now, waiting in Saved for later

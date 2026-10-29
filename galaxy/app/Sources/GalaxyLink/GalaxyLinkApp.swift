@@ -122,6 +122,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let state = menu.addItem(withTitle: watcher.statusLine, action: nil, keyEquivalent: "")
         state.isEnabled = false
+        if watcher.waiting > 0 {
+            menu.addItem(withTitle: watcher.waiting == 1 ? "1 new lesson waiting…" : "\(watcher.waiting) new lessons waiting…", action: #selector(openTeach), keyEquivalent: "").target = self
+        }
+        if watcher.notificationsAllowed == false {
+            menu.addItem(withTitle: "Turn on notifications…", action: #selector(openNotificationSettings), keyEquivalent: "").target = self
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: watcher.paused ? "Resume watching" : "Pause watching", action: #selector(togglePaused), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Open Galaxy Teach", action: #selector(openTeach), keyEquivalent: "").target = self
@@ -130,8 +136,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Quit Galaxy Teach", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
         item.button?.appearsDisabled = watcher.paused
+        // How many lessons are waiting for a Begin or Skip, next to the icon.
+        item.length = watcher.waiting > 0 ? NSStatusItem.variableLength : NSStatusItem.squareLength
+        item.button?.title = watcher.waiting > 0 ? " \(watcher.waiting)" : ""
+        item.button?.imagePosition = .imageLeading
     }
 
+    @objc private func openNotificationSettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
+    }
     @objc private func togglePaused() { watcher?.setPaused(!(watcher?.paused ?? false)) }
     @objc private func openTeach() {
         controller.showWindow(nil)

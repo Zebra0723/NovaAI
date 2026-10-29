@@ -48,6 +48,13 @@ function stagePill() {
   return `<span class="pill" title="${esc(st[1])}">${icon("sparkle")}${esc(st[0])}</span>`;
 }
 
+/** macOS isn't letting Galaxy Teach show its notifications: say how to turn them on. */
+function notifyPill() {
+  const w = o()?.watcher;
+  if (!w?.live || w.notifications !== false) return "";
+  return `<span class="pill attention" title="Galaxy Teach still shows a plain notification without buttons until then">Notifications are off · System Settings → Notifications → Galaxy Teach</span>`;
+}
+
 function headline() {
   const s = o()?.stats;
   const offers = o()?.offers?.length ?? 0;
@@ -126,7 +133,7 @@ const home = {
           <div class="label date">Galaxy Teach · ${x?.teachOnline ? "ready" : "not running"}</div>
           <h1>${headline()}</h1>
           <div class="story">When a command, a bit of code or a new idea comes up while you work, Teach offers you a lesson on it straight away. It's written by Claude for you, with examples from your own GalaxyAI. <b>Your screen is never recorded or saved:</b> Teach only keeps the topics, your lessons and your notes.</div>
-          <div class="pills">${watcherPill()}${stagePill()}${x?.status && !x.status.ok ? `<span class="pill attention">Can't reach Claude: ${esc(x.status.reason)}</span>` : ""}</div>
+          <div class="pills">${watcherPill()}${stagePill()}${notifyPill()}${x?.status && !x.status.ok ? `<span class="pill attention">Can't reach Claude: ${esc(x.status.reason)}</span>` : ""}</div>
         </div>
         <div class="teach-stats">
           <div><b>${s?.streak ?? 0}</b><span>day streak</span></div>

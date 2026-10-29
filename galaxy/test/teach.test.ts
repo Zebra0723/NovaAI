@@ -128,6 +128,13 @@ describe("Galaxy Teach", () => {
     expect(written.content.buildsOn).toEqual(["Lesson on ports"]);
   });
 
+  test("the page knows when macOS is blocking Teach's notifications", async () => {
+    await as("you")("PUT", "/v1/teach/watcher", { watching: true, apps: ["Terminal"], notifications: false });
+    expect((await as("you")<any>("GET", "/v1/teach")).watcher).toMatchObject({ watching: true, notifications: false, live: true });
+    await as("you")("PUT", "/v1/teach/watcher", { watching: true, apps: ["Terminal"] });
+    expect((await as("you")<any>("GET", "/v1/teach")).watcher.notifications).toBe(true);
+  });
+
   test("a lesson must hold together to be accepted", () => {
     expect(tidyLesson({ title: "x", sections: [], quiz: [] })).toBeNull();
     const t = tidyLesson({ ...LESSON, quiz: [...LESSON.quiz, { q: "bad", choices: ["a"], answer: 3 }] })!;
