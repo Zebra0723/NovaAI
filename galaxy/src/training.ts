@@ -211,9 +211,9 @@ export class Training {
     if (!columns("practice").includes("kind")) this.db.exec("alter table practice add column kind text not null default 'practice'");
     this.db.exec("create table if not exists training_meta (key text primary key, value text not null)");
     // Sessions before 0.3 could end in seconds without really running. Start everyone again from their brief, once.
-    if (!this.db.query("select 1 from training_meta where key = 'reset-0.3'").get()) {
+    if (!this.db.query("select 1 from training_meta where key = 'reset-0.4'").get()) {
       this.wipe();
-      this.db.query("insert into training_meta (key, value) values ('reset-0.3', ?)").run(String(this.now()));
+      this.db.query("insert into training_meta (key, value) values ('reset-0.4', ?)").run(String(this.now()));
     }
   }
 

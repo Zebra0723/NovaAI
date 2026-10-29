@@ -15,12 +15,19 @@ const TEST = () => state.training?.testMinutes ?? 12;
 /** The session running now, if any. */
 const live = (id) => (memberOf(id)?.latest?.status === "running" ? memberOf(id).latest : null);
 /** Minutes to show: the running session's, counting up live; otherwise last night's. */
+/** Showing today's test session: one is running, or one ran today and there's been no overnight one. */
+const showingTest = (id) => {
+  const m = memberOf(id);
+  return live(id)?.trigger === "test" || (!live(id) && !m?.minutesToday && (m?.testedToday ?? 0) > 0);
+};
 const shownMinutes = (id) => {
   const s = live(id);
-  return s ? Math.min(shownBudget(id), Math.max(0, Math.floor((Date.now() - s.startedAt) / 60_000))) : memberOf(id)?.minutesToday ?? 0;
+  if (s) return Math.min(shownBudget(id), Math.max(0, Math.floor((Date.now() - s.startedAt) / 60_000)));
+  const m = memberOf(id);
+  return Math.min(shownBudget(id), showingTest(id) ? m?.testedToday ?? 0 : m?.minutesToday ?? 0);
 };
 /** Out of: twelve for a test session, else the member's overnight minutes. */
-const shownBudget = (id) => (live(id)?.trigger === "test" ? TEST() : BUDGET(id));
+const shownBudget = (id) => (showingTest(id) ? TEST() : BUDGET(id));
 const hour = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric" });
 const windowText = () => {
   const w = state.training?.window ?? { start: 1, end: 6 };
@@ -380,7 +387,7 @@ function headHTML(id) {
         <div class="pills">${statusLine(m)}<span class="pill">${id === "nebula" ? (m?.practises ? "Trains on its own simulator" : "Rehearsed until its simulator joins in") : m?.practises ? "Answers its own drills" : "Drills are rehearsed by the trainer"}</span>${d?.program ? `<span class="pill">Program v${d.program.version}</span>` : ""}</div>
       </div>
       <div class="now today-card">
-        <div class="label">${live(id)?.trigger === "test" ? "Test session" : "Overnight"}</div>
+        <div class="label">${showingTest(id) ? (live(id) ? "Test session" : "Tested today") : "Overnight"}</div>
         <div class="today">${ring(id, 64, 6)}<div><b>${shownMinutes(id)}<i> of ${shownBudget(id)} min</i></b><span>${running(m) ? "Session in progress" : lastNight ? `Last night: ${lastNight.score !== null ? `${pct(lastNight.score)}/100` : lastNight.status === "failed" ? "didn't finish" : "done"}` : `Every night, ${esc(windowText())}`}</span></div></div>
         <button class="btn primary" id="train-now" title="A ${TEST()}-minute session now, for testing. It never runs over real work." ${running(m) || !m?.joined ? "disabled" : ""}>${icon("play")}${running(m) ? "Training now" : `Test session · ${TEST()} min`}</button>
       </div>
