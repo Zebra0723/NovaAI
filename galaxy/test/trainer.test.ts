@@ -482,3 +482,64 @@ describe("pausing, stopping and removing sessions", () => {
     expect(h.playbooks[0].lessons).toContain("Before texting someone new, get the owner's yes in their own words.");
   });
 });
+
+describe("when a member can't take a drill", () => {
+  /** Plays a member that answers its drills the way `reply` says. */
+  function member(id: string, reply: (prompt: string) => { answer?: string; decline?: string }) {
+    let stop = false;
+    const loop = (async () => {
+      while (!stop) {
+        for (const item of await link.inbox(id, 100)) {
+          if (item.kind !== "practice") continue;
+          const r = reply(item.text);
+          if (r.answer) link.training.answer(id, item.taskId, r.answer);
+          else if (r.decline) await as(id)("POST", `/v1/practice/${item.taskId}/decline`, { reason: r.decline });
+        }
+      }
+    })();
+    return async () => {
+      stop = true;
+      await loop;
+    };
+  }
+
+  test("busy with you: the trainer stops at once instead of waiting, because real work comes first", async () => {
+    link.hello("nova", { powers: ["practice"] });
+    link.hello("trainer", {});
+    const done = member("nova", () => ({ decline: "busy: the user is using Nova right now" }));
+    const log: string[] = [];
+    const started = Date.now();
+    const s = await new Coach({ call: as("trainer"), think: fakeThink(log), budgetMs: 12 * 60_000, answerWaitMs: 60_000 }).session("nova", "2026-10-28");
+    await done();
+    expect(Date.now() - started).toBeLessThan(10_000); // no minute-long wait for an answer that isn't coming
+    expect(log).not.toContain("rehearse");
+    expect(link.training.thread("nova").some((m) => m.text.includes("is busy with you right now"))).toBe(true);
+    expect(s?.summary).toBeTruthy();
+  });
+
+  test("it couldn't think: the trainer rehearses that one straight away, and says so once", async () => {
+    link.hello("nova", { powers: ["practice"] });
+    link.hello("trainer", {});
+    const done = member("nova", () => ({ decline: "Nova couldn't reach Claude" }));
+    const log: string[] = [];
+    const started = Date.now();
+    const s = await new Coach({ call: as("trainer"), think: fakeThink(log), budgetMs: 12 * 60_000, answerWaitMs: 60_000 }).session("nova", "2026-10-28");
+    await done();
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(log.filter((x) => x === "rehearse").length).toBeGreaterThanOrEqual(2);
+    expect(s).toMatchObject({ status: "done", drills: 2 });
+    expect(link.training.thread("nova").filter((m) => m.text.includes("couldn't answer that one itself"))).toHaveLength(1);
+  });
+
+  test("its own answers come through", async () => {
+    link.hello("nova", { powers: ["practice"] });
+    link.hello("trainer", {});
+    const done = member("nova", () => ({ answer: "I'd open the portal and download the files.\n\nWhat I'd do: Safari, then the shell to move them." }));
+    const log: string[] = [];
+    const s = await new Coach({ call: as("trainer"), think: fakeThink(log), budgetMs: 12 * 60_000, answerWaitMs: 60_000 }).session("nova", "2026-10-28");
+    await done();
+    expect(log).not.toContain("rehearse");
+    expect(s).toMatchObject({ status: "done", drills: 2 });
+    expect(link.training.thread("nova").filter((m) => m.speaker === "nova" && m.kind === "answer" && !m.rehearsal).length).toBeGreaterThanOrEqual(2);
+  });
+});

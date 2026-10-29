@@ -181,6 +181,13 @@ actor GalaxyLink {
         await call("POST", "/v1/practice/\(id)/answer", body: ["answer": answer]) != nil
     }
 
+    /// Tells the trainer straight away that Nova can't take this drill, and why, so it never
+    /// waits on an answer that isn't coming. "busy…" means the user is using Nova.
+    @discardableResult
+    func practiceDecline(id: String, reason: String) async -> Bool {
+        await call("POST", "/v1/practice/\(id)/decline", body: ["reason": reason]) != nil
+    }
+
     func isRunning() async -> Bool {
         guard let url = URL(string: "/v1/health", relativeTo: baseURL()) else { return false }
         let request = URLRequest(url: url, timeoutInterval: 2)

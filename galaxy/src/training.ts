@@ -118,7 +118,8 @@ export interface Practice {
   sessionId: string;
   prompt: string;
   answer: string;
-  status: "waiting" | "answered" | "expired";
+  /** declined: the member couldn't take it (busy with you, or it couldn't think) and said why, in `answer`. */
+  status: "waiting" | "answered" | "expired" | "declined";
   createdAt: number;
   answeredAt: number;
 }
@@ -760,6 +761,20 @@ export class Training {
     // The member's own answer goes straight into its 1:1, in its own name. A workout's
     // results are read and posted by the trainer, once it has made sense of them.
     if (p.kind === "practice") this.post(who, p.member, { kind: "answer", text, sessionId: p.sessionId });
+    for (const wake of [...(this.practiceWaiters.get(id) ?? [])]) wake();
+    return this.practice(id)!;
+  }
+
+  /**
+   * The member says straight away that it can't take this drill, and why ("busy": you're
+   * using it; anything else: it couldn't think). The trainer stops waiting at once.
+   */
+  decline(who: BodyID, id: string, reason: unknown): Practice {
+    const p = this.practice(id);
+    if (!p) throw new TrainingError(404, "no such drill");
+    if (p.member !== who) throw new TrainingError(403, "that drill was set for someone else");
+    if (p.status !== "waiting") return p;
+    this.db.query("update practice set answer = ?, status = 'declined', answered_at = ? where id = ?").run(clean(reason, 300) || "declined", this.now(), id);
     for (const wake of [...(this.practiceWaiters.get(id) ?? [])]) wake();
     return this.practice(id)!;
   }

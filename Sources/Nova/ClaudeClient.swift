@@ -287,7 +287,7 @@ struct ClaudeClient {
             "messages": [["role": "user", "content": prompt]],
         ]
         guard var urlRequest = try? request(body, betas: []) else { return nil }
-        urlRequest.timeoutInterval = 60
+        urlRequest.timeoutInterval = 50 // twice, inside the trainer's two minutes
         guard let (data, response) = try? await URLSession.shared.data(for: urlRequest),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],

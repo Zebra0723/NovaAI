@@ -12,6 +12,8 @@ final class NovaLink {
     private var loops: [Task<Void, Never>] = []
     /// True while a Galaxy Trainer drill is being answered; drills run one at a time.
     private var practicing = false
+    /// Drills that arrived while one was being answered: they wait their turn, never dropped.
+    private var drills: [(item: GalaxyLink.InboxItem, at: Date)] = []
 
     init(controller: NovaController) {
         self.controller = controller
@@ -66,18 +68,44 @@ final class NovaLink {
     }
 
     /// A Galaxy Trainer drill: Nova says what it would do, without doing any of it. Only the model
-    /// is called (no tools, screen, shell, iMessage, memory writes or UI). One at a time, and skipped
-    /// while Nova is busy with real work so it never gets in the way of the user.
+    /// is called (no tools, screen, shell, iMessage, memory writes or UI).
+    ///
+    /// Every drill gets an answer, or the trainer is told at once why not: drills that arrive
+    /// together queue up (one at a time), a drill while you're using Nova is declined as busy
+    /// (real work first: the trainer stops the session), and if Claude doesn't answer it's
+    /// tried once more before the trainer is told, so it rehearses instead of waiting.
     private func practice(_ item: GalaxyLink.InboxItem) {
-        guard !practicing, !controller.isWorking, let key = Keychain.apiKey else { return }
+        drills.append((item, Date()))
+        nextDrill()
+    }
+
+    private func nextDrill() {
+        guard !practicing, !drills.isEmpty else { return }
+        let (item, at) = drills.removeFirst()
+        // The trainer stops waiting after two minutes; an older drill has already moved on.
+        if Date().timeIntervalSince(at) > 110 { return nextDrill() }
         practicing = true
         let memories = NovaStore.shared.memories
+        let working = controller.isWorking
+        let key = Keychain.apiKey
         Task { [weak self] in
-            let galaxy = await GalaxyLink.shared.promptContext()
-            if let answer = await NovaAgent.practice(item.text, apiKey: key, memories: memories, galaxy: galaxy) {
-                await GalaxyLink.shared.practiceAnswer(id: item.taskId, answer: answer)
+            let link = GalaxyLink.shared
+            if working {
+                await link.practiceDecline(id: item.taskId, reason: "busy: the user is using Nova right now")
+            } else if let key {
+                let galaxy = await link.promptContext()
+                var answer = await NovaAgent.practice(item.text, apiKey: key, memories: memories, galaxy: galaxy)
+                if answer == nil { answer = await NovaAgent.practice(item.text, apiKey: key, memories: memories, galaxy: galaxy) }
+                if let answer {
+                    await link.practiceAnswer(id: item.taskId, answer: answer)
+                } else {
+                    await link.practiceDecline(id: item.taskId, reason: "Nova couldn't reach Claude")
+                }
+            } else {
+                await link.practiceDecline(id: item.taskId, reason: "Nova has no API key set")
             }
             self?.practicing = false
+            self?.nextDrill()
         }
     }
 

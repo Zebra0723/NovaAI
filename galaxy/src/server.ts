@@ -342,11 +342,12 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     }
   }
   if (path === "/v1/practice" && method === "POST") return json(training.setDrill(needBody(), await input()), 201);
-  const pr = path.match(/^\/v1\/practice\/([\w-]+)(?:\/(answer|expire))?$/);
+  const pr = path.match(/^\/v1\/practice\/([\w-]+)(?:\/(answer|expire|decline))?$/);
   if (pr) {
     const [, id, act] = pr as unknown as [string, string, string | undefined];
     if (act === "answer" && method === "POST") return json(training.answer(needBody(), id, (await input()).answer));
     if (act === "expire" && method === "POST") return json(training.expireDrill(needBody(), id));
+    if (act === "decline" && method === "POST") return json(training.decline(needBody(), id, (await input()).reason));
     if (!act && method === "GET") return json(await training.awaitAnswer(id, wait()));
   }
 

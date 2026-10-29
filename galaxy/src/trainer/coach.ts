@@ -256,6 +256,12 @@ export class Coach {
       }
       const sim = drill.type === "simulation" || (drill.turns ?? 1) > 1;
       const transcript = sim ? await this.simulate(ctx, l, drill, practises, ctx.drills + 1) : await this.single(ctx, l, drill, practises);
+      if (ctx.busy) {
+        // Real work first: the member is busy with you, so the session ends here.
+        ctx.stopped = `${nameOf(member)} is busy with you`;
+        await this.say(member, "message", `${nameOf(member)} is busy with you right now, so we'll stop here. Real work always comes first.`, { sessionId: sid });
+        return false;
+      }
       if (!transcript) {
         // Nothing came back at all: thinking has stopped working, so don't burn the rest of the session.
         if (this.o.think.lastError) {
@@ -316,26 +322,38 @@ export class Coach {
   private async respond(ctx: Ctx, l: Learnt, practises: boolean, text: string): Promise<string> {
     if (practises) {
       const own = await this.live(ctx.member, ctx.sid, text);
-      if (own) return own;
+      if (own.answer) return own.answer;
+      if (own.declined?.startsWith("busy")) {
+        ctx.busy = own.declined;
+        return "";
+      }
+      if (own.declined && !ctx.noted) {
+        ctx.noted = true;
+        await this.say(ctx.member, "message", `${nameOf(ctx.member)} couldn't answer that one itself (${own.declined}), so I'm rehearsing it.`, { sessionId: ctx.sid });
+      }
     }
     const rehearsed = (await this.think(rehearsePrompt(nameOf(ctx.member), l.context, text), Math.min(SHORT_THINK_MS, ctx.deadline - this.now())))?.trim().slice(0, 1500) ?? "";
     if (rehearsed) await this.say(ctx.member, "answer", rehearsed, { sessionId: ctx.sid, rehearsal: true });
     return rehearsed;
   }
 
-  /** Sets the drill for the member itself, and waits for its own answer. "" if it doesn't come. */
-  private async live(member: string, sessionId: string, prompt: string, kind = "practice", waitMs = this.o.answerWaitMs ?? 75_000): Promise<string> {
+  /**
+   * Sets the drill for the member itself, and waits for its own answer. No answer if it
+   * doesn't come; `declined` when the member said straight away that it can't take it.
+   */
+  private async live(member: string, sessionId: string, prompt: string, kind = "practice", waitMs = this.o.answerWaitMs ?? 120_000): Promise<{ answer: string; declined?: string }> {
     const drill = await this.o.call<Practice>("POST", "/v1/practice", { member, sessionId, prompt, kind });
-    if (!drill) return "";
+    if (!drill) return { answer: "" };
     const until = this.now() + waitMs;
     while (this.now() < until) {
       const wait = Math.max(1, Math.min(45, Math.ceil((until - this.now()) / 1000)));
       const p = await this.o.call<Practice>("GET", `/v1/practice/${drill.id}?wait=${wait}`, undefined, (wait + 10) * 1000);
-      if (p?.status === "answered") return p.answer;
+      if (p?.status === "answered") return { answer: p.answer };
+      if (p?.status === "declined") return { answer: "", declined: p.answer || "declined" };
       if (!p || p.status !== "waiting") break;
     }
     await this.o.call("POST", `/v1/practice/${drill.id}/expire`, {});
-    return "";
+    return { answer: "" };
   }
 
   // ------------------------------------------------------------------ Nebula
@@ -360,7 +378,12 @@ export class Coach {
       ctx.stopped = "Nebula picked up real work";
       return;
     }
-    const raw = await this.live("nebula", ctx.sid, JSON.stringify(workout), "workout", (minutes + 4) * 60_000);
+    const live = await this.live("nebula", ctx.sid, JSON.stringify(workout), "workout", (minutes + 4) * 60_000);
+    if (live.declined?.startsWith("busy")) {
+      ctx.stopped = "Nebula is in use";
+      return;
+    }
+    const raw = live.answer;
     const results = readJSON<WorkoutResults>(raw);
     if (!results?.gestures?.length) {
       ctx.stopped = raw ? "Nebula's results didn't make sense" : "Nebula didn't finish the workout";
@@ -414,6 +437,10 @@ interface Ctx {
   scores: number[];
   drills: number;
   stopped: string;
+  /** The member said it's busy with you: the session stops at the end of this drill. */
+  busy?: string;
+  /** Said once a session: the member couldn't answer one itself, so it's rehearsed. */
+  noted?: boolean;
 }
 
 interface Learnt {
