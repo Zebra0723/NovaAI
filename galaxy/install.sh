@@ -12,7 +12,8 @@ DOMAIN="gui/$(id -u)"
 if [ "${1:-}" = "--remove" ]; then
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   launchctl bootout "$DOMAIN/ai.galaxy.trainer" 2>/dev/null || true
-  rm -f "$PLIST" "$HOME/Library/LaunchAgents/ai.galaxy.trainer.plist" "$HOME/.local/bin/galaxy"
+  launchctl bootout "$DOMAIN/ai.galaxy.medic" 2>/dev/null || true
+  rm -f "$PLIST" "$HOME/Library/LaunchAgents/ai.galaxy.trainer.plist" "$HOME/Library/LaunchAgents/ai.galaxy.medic.plist" "$HOME/.local/bin/galaxy"
   echo "Galaxy Link removed. Your memories are still in ~/Library/Application Support/Galaxy."
   exit 0
 fi
@@ -46,6 +47,13 @@ load_agent() { # load_agent LABEL PLIST
   launchctl kickstart -k "$DOMAIN/$1"
 }
 load_agent "$LABEL" "$PLIST"
+
+# Galaxy Medic: checks on every member once a minute and fixes what it can.
+MEDIC_PLIST="$HOME/Library/LaunchAgents/ai.galaxy.medic.plist"
+MEDIC_PATHS="$(dirname "$BUN"):$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+sed -e "s|__BUN__|$BUN|g" -e "s|__ROOT__|$ROOT|g" -e "s|__HOME__|$HOME|g" -e "s|__PATH__|$MEDIC_PATHS|g" \
+  "$ROOT/launchd/ai.galaxy.medic.plist" > "$MEDIC_PLIST"
+load_agent ai.galaxy.medic "$MEDIC_PLIST"
 
 # Galaxy Trainer: daily practice for every member, through Claude Code on your plan.
 TRAINER_PLIST="$HOME/Library/LaunchAgents/ai.galaxy.trainer.plist"

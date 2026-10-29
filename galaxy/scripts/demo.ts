@@ -218,9 +218,51 @@ link.requestApproval("zenith", { title: "Spend $12 on a domain for the tennis si
   say("comet", "sim", "The owner: \"6. and say like 15 min\"", { sessionId: cs.id });
 }
 
+// Galaxy Medic: a day of checkups, three fixes, and one thing that needs you.
+{
+  const m = link.medicine;
+  link.hello("medic", { version: "0.1.0" });
+  const members = ["link", "comet", "nova", "nebula", "zenith", "trainer", "orbit"];
+  for (let minutesAgo = 24 * 60; minutesAgo >= 0; minutesAgo -= 10) {
+    at(minutesAgo);
+    const sick = (id: string) =>
+      (id === "zenith" && minutesAgo > 610 && minutesAgo < 640) ||
+      (id === "nova" && minutesAgo > 300 && minutesAgo < 312) ||
+      (id === "link" && minutesAgo > 1100 && minutesAgo < 1112) ||
+      (id === "trainer" && minutesAgo < 200);
+    m.report("medic", {
+      at: clock,
+      members: members.map((id) => ({
+        member: id,
+        health: id === "orbit" ? "off" : sick(id) ? (id === "trainer" ? "needs_you" : "recovering") : "healthy",
+        note: id === "orbit" ? "Quit, which is normal" : id === "trainer" && sick(id) ? "Can't reach Claude" : "Running",
+      })),
+    });
+  }
+  const fixed = (minutesAgo: number, key: string, member: string, title: string, found: string, did: string, mins: number) => {
+    at(minutesAgo);
+    m.record("medic", { key, member, kind: "crashed", status: "open", title, found, did });
+    at(minutesAgo - mins);
+    m.resolve("medic", key, did);
+  };
+  fixed(1110, "link:down", "link", "Galaxy Link isn't answering", "It exited with code 1.", "Restarted Galaxy Link; it was back in 9 seconds.", 2);
+  fixed(630, "zenith:down", "zenith", "Zenith stopped", "It exited with code 137.\nzenith: taking missions into /Users/avj/Galaxy/Missions", "Restarted Zenith. Its mission picked up where it left off.", 3);
+  fixed(310, "nova:crashed", "nova", "Nova crashed", "It stopped without quitting.", "Reopened Nova.", 2);
+  at(190);
+  m.record("medic", {
+    key: "trainer:signin",
+    member: "trainer",
+    kind: "signed_out",
+    status: "needs_you",
+    title: "The trainer can't reach Claude, so tonight's training won't run",
+    found: "Claude isn't signed in for the trainer (Claude Code said: OAuth token has expired). Run `galaxy login` in Terminal.",
+    fix: "galaxy login",
+  });
+}
+
 store.now = real;
 // Everyone but Orbit is running, the way it usually is.
-const running = ["comet", "nova", "nebula", "zenith", "trainer"];
+const running = ["comet", "nova", "nebula", "zenith", "trainer", "medic"];
 const beat = () => running.forEach((id) => store.touchBody(id));
 beat();
 setInterval(beat, 20_000);

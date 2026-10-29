@@ -63,6 +63,8 @@ export const api = {
   approvals: () => call("GET", "/v1/approvals?limit=60"),
   pending: (since = 0, wait = 0) =>
     call("GET", `/v1/approvals/pending?since=${since}${wait ? `&wait=${wait}` : ""}`, undefined, { timeout: wait ? (wait + 10) * 1000 : 10_000 }),
+  medic: () => call("GET", "/v1/medic"),
+  checkupNow: () => call("POST", "/v1/medic/checkup-now", {}),
   training: () => call("GET", "/v1/training"),
   trainingMember: (id) => call("GET", `/v1/training/${id}`),
   trainingThreads: (after = 0, wait = 0) =>

@@ -33,6 +33,7 @@
   --nebula: #059669;
   --zenith: #2563eb;
   --trainer: #be185d;
+  --medic: #0e7490;
   --you: #1c1917;
   --other: #78716c;
 
@@ -77,6 +78,8 @@ svg { display: block; }
 [data-body="nebula"] { --c: var(--nebula); }
 [data-body="zenith"] { --c: var(--zenith); }
 [data-body="trainer"] { --c: var(--trainer); }
+[data-body="medic"] { --c: var(--medic); }
+[data-body="link"] { --c: var(--ink); }
 [data-body="you"] { --c: var(--you); }
 
 /* Labels: small mono capitals, the quiet voice of the interface. */
@@ -817,3 +820,62 @@ kbd { font: 400 11px var(--mono); padding: 1px 6px; border-radius: 5px; border: 
 .t-alert p { margin: 4px 0 0; color: #7f1d1d; font-size: 13px; line-height: 1.5; }
 .t-alert p.muted { color: #9f5a50; }
 .t-alert code { font: 400 12px var(--mono); background: rgba(255, 255, 255, .6); padding: 1px 5px; border-radius: 4px; }
+
+
+/* ----------------------------------------------------------- Galaxy Medic
+
+   Medic's idea is the pulse: one line that beats for every member that's well,
+   and goes flat where one isn't. */
+
+.medic-hero { grid-template-columns: minmax(0, 1fr) 320px; align-items: center; }
+.medic-hero h1 em { color: var(--medic); }
+.pulse-panel { display: grid; gap: 16px; justify-items: stretch; }
+.pulse { padding: 18px 18px 8px; border-radius: 16px; background: var(--card); border: 1px solid var(--rule); }
+.pulse-svg { width: 100%; height: 120px; display: block; overflow: visible; }
+.pulse-svg .beat { stroke-dasharray: 900; stroke-dashoffset: 900; animation: beat 2.6s var(--ease) forwards; }
+@keyframes beat { to { stroke-dashoffset: 0; } }
+.pulse-panel .btn { justify-content: center; }
+
+.vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.vital { padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 12px; }
+.vital.needs_you { border-color: #f1d5cf; box-shadow: 0 0 0 3px #fbf0ee; }
+.vital.recovering { border-color: #f3e0bf; }
+.v-top { display: flex; align-items: center; gap: 12px; }
+.v-name b { display: block; font: 400 22px/1.05 var(--serif); letter-spacing: -.01em; }
+.hpill { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+.hpill i { width: 7px; height: 7px; border-radius: 50%; background: var(--rule-2); }
+.hpill.healthy { color: var(--good); } .hpill.healthy i { background: var(--good); animation: lamp-live 2.4s ease-in-out infinite; --c: var(--good); }
+.hpill.recovering { color: var(--warn); } .hpill.recovering i { background: #d97706; }
+.hpill.needs_you { color: var(--bad); } .hpill.needs_you i { background: var(--bad); }
+.v-note { margin: 0; flex: 1; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.v-up .label { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.v-up .label span + span { color: var(--ink); letter-spacing: 0; }
+.up-strip { display: grid; grid-template-columns: repeat(48, minmax(0, 1fr)); gap: 2px; height: 22px; }
+.up-strip i { border-radius: 2px; background: var(--paper-2); }
+.up-strip i.ok { background: color-mix(in srgb, var(--good) 75%, #fff); }
+.up-strip i.some { background: #e8b15a; }
+.up-strip i.bad { background: #e0786a; }
+
+.tickets { display: grid; gap: 14px; }
+.ticket { padding: 18px 22px 20px; border-color: #f1d5cf; }
+.ticket::before { content: ""; position: absolute; left: -1px; top: 16px; bottom: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--bad); }
+.ticket .t-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.ticket .t-head b { display: block; font: 400 21px/1.2 var(--serif); }
+.ticket .t-head span { font: 400 11px var(--mono); color: var(--ink-3); }
+.ticket .label { margin: 14px 0 6px; }
+.found { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--paper); border: 1px solid var(--rule); font: 400 12px/1.55 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; user-select: text; -webkit-user-select: text; }
+.fix { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 10px; background: var(--ink); }
+.fix code { flex: 1; font: 400 12.5px var(--mono); color: #f4f2ee; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.fix .btn { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .16); color: #fff; height: 28px; }
+.fix .btn:hover { background: rgba(255, 255, 255, .18); }
+
+.fixed-list { padding: 6px 0; }
+.fixed-row { display: grid; grid-template-columns: 64px auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 22px; }
+.fixed-row + .fixed-row { border-top: 1px solid var(--rule); }
+.fixed-row time { font: 400 11px var(--mono); color: var(--ink-3); }
+.fixed-row b { display: block; font-size: 13.5px; font-weight: 500; }
+.fixed-row span:not(.chip) { display: block; font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+.medic-steps .n { color: var(--medic); }
+.medic-steps .n svg { width: 16px; height: 16px; }
+
+@media (max-width: 1280px) { .vitals { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

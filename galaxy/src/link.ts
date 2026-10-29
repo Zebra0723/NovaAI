@@ -7,6 +7,7 @@
 
 import { spawn } from "node:child_process";
 import { PresenceReader } from "./presence";
+import { Medicine } from "./medicine";
 import { Training } from "./training";
 import { Store, type Approval, type Body, type BodyID, type ChatMessage, type InboxItem, type Task } from "./store";
 
@@ -130,6 +131,21 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
     sendMe: [],
     notFor: "work of any kind: I train, I don't take tasks",
   },
+  // The other one that isn't an installment: it keeps everyone running.
+  medic: {
+    name: "Medic",
+    powers: ["health"],
+    surface: "none",
+    launch: "",
+    intro:
+      "Hi everyone, I'm Galaxy Medic. I check on all of you every minute, restart anyone who crashes, and " +
+      "fix what I can on my own. I only bother our human when something needs them.",
+    about:
+      "I'm Galaxy Medic. I check every member every minute: is it running, signed in, answering, not stuck. " +
+      "When one crashes I restart it; when something's wrong that only the human can fix, I tell them exactly what to do.",
+    sendMe: [],
+    notFor: "work of any kind: I keep you running, I don't take tasks",
+  },
   nebula: {
     name: "Nebula",
     powers: ["gestures", "approvals"],
@@ -183,12 +199,14 @@ export class Link {
   private expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   launcher: (command: string) => void = defaultLauncher;
   readonly training: Training;
+  readonly medicine: Medicine;
 
   constructor(
     readonly store: Store,
     readonly presence = new PresenceReader(),
   ) {
     this.training = new Training(this, store);
+    this.medicine = new Medicine(this, store);
   }
 
   // ------------------------------------------------------------------ bodies
@@ -606,7 +624,7 @@ export class Link {
 
   /** Members in a fixed order: the five installments first, then anyone newer. */
   private members(): Body[] {
-    const order = ["comet", "orbit", "nova", "nebula", "zenith", "trainer"];
+    const order = ["comet", "orbit", "nova", "nebula", "zenith", "trainer", "medic"];
     const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
     return this.store
       .bodies()
@@ -640,6 +658,9 @@ export class Link {
     if (from === "orbit") {
       return "Good to meet you all. When the human asks me for something out loud that I can't do by voice, " +
         "I'll pass it to whichever of you it suits.";
+    }
+    if (from === "medic") {
+      return "Good to meet you all. If you crash, I'll have you back up in a minute; if you're stuck, I'll notice.";
     }
     if (from === "trainer") {
       return "Good to meet you all. Your first sessions start today: twelve minutes each, and nothing in practice is ever real, so try things.";

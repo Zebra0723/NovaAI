@@ -6,6 +6,7 @@ import { timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, sep } from "node:path";
 import { Link, LinkError } from "./link";
+import { MedicError } from "./medicine";
 import { TrainingError } from "./training";
 
 /** The Galaxy Link app's pages, served at /. */
@@ -44,7 +45,7 @@ export async function handle(link: Link, token: string, req: Request): Promise<R
   try {
     return await route(link, token, req);
   } catch (error) {
-    if (error instanceof LinkError || error instanceof TrainingError) return json({ error: error.message }, error.status);
+    if (error instanceof LinkError || error instanceof TrainingError || error instanceof MedicError) return json({ error: error.message }, error.status);
     if (error instanceof SyntaxError) return json({ error: "that isn't JSON" }, 400);
     console.error("galaxyd:", error);
     return json({ error: "something went wrong in Link" }, 500);
@@ -197,6 +198,22 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
     if (!link.store.body(who)) throw new LinkError(403, "only bodies of GalaxyAI can talk in Galaxy Chat");
     const { text } = await input();
     return json(link.say(who, "message", String(text ?? "")), 201);
+  }
+
+  // ------------------------------------------------------------------ medic
+  const medicine = link.medicine;
+  if (path === "/v1/medic" && method === "GET") return json(medicine.overview());
+  if (path === "/v1/medic/checkup" && method === "PUT") return json(medicine.report(needBody(), await input()));
+  if (path === "/v1/medic/incidents" && method === "POST") return json(medicine.record(needBody(), await input()), 201);
+  if (path === "/v1/medic/resolve" && method === "POST") {
+    const { key, did } = await input();
+    return json(medicine.resolve(needBody(), String(key ?? ""), typeof did === "string" ? did : ""));
+  }
+  // You ask for a checkup now: Medic hears it through its inbox.
+  if (path === "/v1/medic/checkup-now" && method === "POST") {
+    if (!["you", "galaxy"].includes(needBody())) throw new LinkError(403, "only you can ask for a checkup");
+    link.postInbox({ body: "medic", kind: "message", taskId: "", replyTo: "", text: "checkup" });
+    return json({ ok: true, medicOnline: link.isOnline("medic") }, 202);
   }
 
   // --------------------------------------------------------------- training

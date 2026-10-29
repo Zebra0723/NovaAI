@@ -13,6 +13,7 @@ export const state = {
   pending: { version: 0, pending: [] },
   approvals: [],
   // Galaxy Trainer: the overview, one member's detail while its page is open, and every 1:1 thread.
+  medic: null,
   training: null,
   trainingFocus: "",
   trainingDetail: {},
@@ -62,7 +63,12 @@ async function refresh() {
   state.approvals = approvals;
   connected(true);
   changed("data");
-  // Training is newer than the rest of Link: an older galaxyd just has none.
+  // Medic and training are newer than the rest of Link: an older galaxyd just has none.
+  const medic = await api.medic().catch(() => null);
+  if (JSON.stringify(medic) !== JSON.stringify(state.medic)) {
+    state.medic = medic;
+    changed("medic");
+  }
   const [training, detail] = await Promise.all([
     api.training().catch(() => null),
     state.trainingFocus ? api.trainingMember(state.trainingFocus).catch(() => null) : null,

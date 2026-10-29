@@ -17,6 +17,7 @@ const HELP = `galaxy - Galaxy Link from Terminal
   galaxy tasks               recent handoffs between bodies
   galaxy context <body>      the prompt block a body sees
   galaxy import              merge Nova's and Orbit's own memories in (safe to rerun)
+  galaxy medic               how every member is, as Galaxy Medic sees it (--now for a fresh checkup)
   galaxy login               sign the background members (Trainer, Zenith) in to Claude, like Comet
   galaxy train <member>      a 12-minute test session with Galaxy Trainer, now
   galaxy trainer reset       wipe all training and start every member from its brief
@@ -108,6 +109,26 @@ switch (command) {
       const r = await need(link.call<{ found: number; added: number }>("POST", "/v1/memory/import", { items }));
       console.log(`  ${name}: ${r.added} new of ${r.found}`);
     }
+    break;
+  }
+  case "medic": {
+    if (args[0] === "--now") {
+      await need(link.call("POST", "/v1/medic/checkup-now", {}));
+      await new Promise((r) => setTimeout(r, 8000));
+    }
+    const o = await need(link.call<any>("GET", "/v1/medic"));
+    if (!o.checkup) {
+      console.log("Galaxy Medic hasn't done a checkup yet. Is it running? launchctl kickstart gui/$(id -u)/ai.galaxy.medic");
+      break;
+    }
+    const mark: Record<string, string> = { healthy: "✓", recovering: "↻", needs_you: "✗", off: "○", unknown: "?" };
+    console.log(`Checked ${ago(o.checkup.at)}${o.stale ? " (Medic seems to have stopped)" : ""}.\n`);
+    for (const m of o.checkup.members) console.log(`  ${mark[m.health] ?? "?"} ${m.member.padEnd(8)} ${m.note}`);
+    if (o.open.length) {
+      console.log("\nNeeds you:");
+      for (const i of o.open) console.log(`  ✗ ${i.title}${i.fix ? `\n      fix: ${i.fix}` : ""}`);
+    }
+    console.log(`\n${o.fixedToday} fixed by Medic in the last 24 hours.`);
     break;
   }
   case "login": {

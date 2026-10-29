@@ -5,8 +5,9 @@ import { start, state, subscribe } from "./state.js";
 import { $, ago, esc } from "./util.js";
 import { closeDrawer, VIEWS as LINK_VIEWS } from "./views.js";
 import { TRAINEES, TRAINER_VIEWS, traineeRow } from "./trainer.js";
+import { MEDIC_VIEWS } from "./medic.js";
 
-const VIEWS = { ...LINK_VIEWS, ...TRAINER_VIEWS };
+const VIEWS = { ...LINK_VIEWS, ...TRAINER_VIEWS, ...MEDIC_VIEWS };
 import { closePalette, openPalette } from "./palette.js";
 
 const NAV = [
@@ -19,8 +20,8 @@ const NAV = [
   ["activity", "Activity"],
   ["system", "System"],
 ];
-const SPACES = [["trainer", "Trainer"]];
-const ICON_FOR = { trainer: "trainer", overview: "overview", chat: "chat", map: "map", handoffs: "handoffs", approvals: "approvals", memory: "memory", activity: "activity", system: "system" };
+const SPACES = [["trainer", "Trainer"], ["medic", "Medic"]];
+const ICON_FOR = { trainer: "trainer", medic: "medic", overview: "overview", chat: "chat", map: "map", handoffs: "handoffs", approvals: "approvals", memory: "memory", activity: "activity", system: "system" };
 
 /** Galaxy Trainer.app opens this same page as ?space=trainer: the Trainer's space on its own. */
 const TRAINER_APP = new URLSearchParams(location.search).get("space") === "trainer";
@@ -34,7 +35,7 @@ const LINK_SIDEBAR = `
       ).join("")}</nav>
       <div class="nav-label"><span>Spaces</span></div>
       <nav class="nav spaces">${SPACES.map(
-        ([id, label]) => `<a href="#/${id}" data-nav="${id}" data-body="${id}">${icon(ICON_FOR[id])}<span>${label}</span><span class="count live-count" hidden></span><span class="key">⌘9</span></a>`,
+        ([id, label], i) => `<a href="#/${id}" data-nav="${id}" data-body="${id}">${icon(ICON_FOR[id])}<span>${label}</span><span class="count live-count" hidden></span><span class="key">⌘${(NAV.length + i + 1) % 10}</span></a>`,
       ).join("")}</nav>
       <div class="nav-label"><span>Members</span><span id="roster-count"></span></div>
       <div class="roster" id="roster"></div>`;
@@ -90,7 +91,7 @@ function show() {
   drawCrumb();
 }
 
-const CRUMB = { overview: "Overview", chat: "Galaxy Chat", map: "Galaxy Map", handoffs: "Handoffs", approvals: "Approvals", memory: "Memory", activity: "Activity", system: "System", trainer: "Trainer" };
+const CRUMB = { overview: "Overview", chat: "Galaxy Chat", map: "Galaxy Map", handoffs: "Handoffs", approvals: "Approvals", memory: "Memory", activity: "Activity", system: "System", trainer: "Trainer", medic: "Medic" };
 function drawCrumb() {
   const name = esc(param.charAt(0).toUpperCase() + param.slice(1));
   if (TRAINER_APP) {
@@ -115,11 +116,19 @@ function chrome() {
     badge.textContent = pending;
   }
 
-  const bodies = (o?.bodies ?? []).filter((b) => b.id !== "trainer");
+  const bodies = (o?.bodies ?? []).filter((b) => b.id !== "trainer" && b.id !== "medic");
+  const sick = (state.medic?.checkup?.members ?? []).filter((m) => m.health === "needs_you").length;
+  const medicBadge = $('[data-nav="medic"] .count');
+  if (medicBadge) {
+    medicBadge.hidden = !sick;
+    medicBadge.textContent = sick;
+  }
   const live = state.training?.members.find((m) => m.latest?.status === "running");
   const liveBadge = $('[data-nav="trainer"] .count');
-  liveBadge.hidden = !live;
-  liveBadge.textContent = live ? "Live" : "";
+  if (liveBadge) {
+    liveBadge.hidden = !live;
+    liveBadge.textContent = live ? "Live" : "";
+  }
   const order = ["comet", "orbit", "nova", "nebula", "zenith"];
   if (TRAINER_APP) {
     $("#roster").innerHTML = TRAINEES.map((id) => traineeRow(id, current === "training" && param === id)).join("");
@@ -179,6 +188,7 @@ function signature() {
     state.chat.length && state.chat[state.chat.length - 1].id,
     state.training && { ...state.training, members: state.training.members },
     Object.values(state.threads).reduce((n, l) => n + l.length, 0),
+    state.medic && { ...state.medic, checkup: state.medic.checkup && { ...state.medic.checkup, at: Math.floor(state.medic.checkup.at / 60_000) } },
     Math.floor(Date.now() / 60_000), // relative times ("3 min ago") move on once a minute
   ]);
 }
@@ -212,9 +222,11 @@ document.addEventListener("keydown", (e) => {
     return $(".palette-scrim") ? closePalette() : openSearch();
   }
   if (e.key === "Escape") closeDrawer();
-  if (e.metaKey && /^[1-9]$/.test(e.key) && !TRAINER_APP) {
+  if (e.metaKey && /^[0-9]$/.test(e.key) && !TRAINER_APP) {
     e.preventDefault();
-    location.hash = `#/${[...NAV, ...SPACES][Number(e.key) - 1][0]}`;
+    const all = [...NAV, ...SPACES];
+    const target = all[(Number(e.key) + 9) % 10];
+    if (target) location.hash = `#/${target[0]}`;
   }
 });
 
