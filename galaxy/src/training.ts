@@ -11,6 +11,7 @@
 // no tools; the rest are rehearsed by the trainer and marked as such.
 
 import { diffPlans } from "./casebook";
+import { BRIEFS } from "./trainer/briefs";
 import type { Link } from "./link";
 import type { BodyID, Store } from "./store";
 
@@ -215,6 +216,21 @@ export class Training {
     if (!this.db.query("select 1 from training_meta where key = 'reset-0.4'").get()) {
       this.wipe();
       this.db.query("insert into training_meta (key, value) values ('reset-0.4', ?)").run(String(this.now()));
+    }
+    // Comet's brief grew (talking to people he lets in, building for them, never filling in an
+    // email). A program made from the old brief takes in the new focus, rubric and scenarios, once.
+    if (!this.db.query("select 1 from training_meta where key = 'comet-brief-2'").get()) {
+      const before = this.program("comet");
+      if (before) {
+        const brief = BRIEFS.comet!;
+        const focus = [...brief.plan.focus, ...before.plan.focus.filter((f) => !brief.plan.focus.includes(f))].slice(0, 8);
+        const known = new Set(before.plan.scenarios.map((x) => x.title.toLowerCase()));
+        const scenarios = [...before.plan.scenarios, ...brief.plan.scenarios.filter((x) => !known.has(x.title.toLowerCase()))];
+        const plan = tidyPlan({ ...before.plan, focus, rubric: brief.plan.rubric, scenarios });
+        this.db.query("update training_programs set brief = ?, plan = ?, version = version + 1, updated_at = ? where member = 'comet'").run(brief.brief, JSON.stringify(plan), this.now());
+        this.recordChange("comet", before, this.program("comet")!);
+      }
+      this.db.query("insert into training_meta (key, value) values ('comet-brief-2', ?)").run(String(this.now()));
     }
   }
 

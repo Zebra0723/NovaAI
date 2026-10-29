@@ -375,3 +375,19 @@ describe("thinking", () => {
     expect(readJSON("no json")).toBeNull();
   });
 });
+
+describe("Comet's brief, updated", () => {
+  test("a program made from the old brief takes in the new focus and scenarios, once, recorded as a change", () => {
+    link.hello("trainer", {});
+    link.training.setProgram("trainer", "comet", { brief: "old brief", plan: { focus: ["Old focus."], rubric: ["old"], scenarios: [{ title: "Old one", setup: "x" }], observations: [] } });
+    store.db.exec("delete from training_meta where key = 'comet-brief-2'");
+    const again = new Link(store, new PresenceReader(() => 10));
+    const p = again.training.program("comet")!;
+    expect(p.plan.focus[0]).toContain("Pick the right move");
+    expect(p.plan.focus).toContain("Old focus.");
+    expect(p.plan.scenarios.map((s) => s.title)).toEqual(expect.arrayContaining(["Old one", "Which email?", "A friend wants a site"]));
+    expect(again.training.thread("comet").some((m) => m.kind === "change" && m.text.includes("Which email?"))).toBe(true);
+    const v = p.version;
+    expect(new Link(store, new PresenceReader(() => 10)).training.program("comet")!.version).toBe(v);
+  });
+});
