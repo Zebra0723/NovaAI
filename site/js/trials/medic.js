@@ -4,7 +4,7 @@
 import { esc, MEMBERS } from "../marks.js";
 
 const BEAT = `<svg class="beat" viewBox="0 0 120 30" preserveAspectRatio="none"><path d="M0 15 H40 L46 4 L52 26 L58 10 L62 15 H120" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
-const IDS = ["link", "nova", "nebula", "zenith", "trainer", "orbit"];
+const IDS = ["link", "comet", "nova", "nebula", "zenith", "trainer", "orbit"];
 
 export default {
   id: "medic",

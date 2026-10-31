@@ -3,6 +3,7 @@
 import { chatLine, esc, sleep, typing } from "../marks.js";
 
 const SUGGESTIONS = [
+  "Text Sam that I'm running late",
   "Rename the screenshots on my desktop by date",
   "Build my tennis team a website",
   "Research the best 3D printers under $300",
@@ -14,6 +15,14 @@ const SUGGESTIONS = [
 /** Who it goes to, and how that member talks it through. Plain keyword routing, like a first guess. */
 function plan(ask) {
   const a = ask.toLowerCase();
+  if (/\btext\b|message|imessage|tell (?!me)\w+ (?:that|i)/.test(a)) {
+    return {
+      to: "comet",
+      why: "texting someone, by iMessage",
+      steps: [["comet", "Sending Sam: “Hey Sam, I'm running a bit late!” Sam's someone you've let in, and those are your words, so it's fine to send."]],
+      done: "Sent ✓ Sam replied: “no worries 👍”",
+    };
+  }
   if (/website|app\b|research|report|plan (?:a|my)|build|mission|overnight/.test(a)) {
     return {
       to: "zenith",

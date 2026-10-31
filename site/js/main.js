@@ -40,6 +40,7 @@ function stars() {
 
 // ------------------------------------------------------------------ members
 const CARDS = [
+  { id: "comet", role: "iMessage, wherever you are", what: "Comet is how your Galaxy reaches you away from the Mac. Text it like a friend: it answers, remembers people and dates, builds websites and small apps, hands screen work to Nova, and sends you the result.", send: ["Anything, by text, from anywhere", "\"Make me a site for…\" and get the live link back", "Texting the people you've let in, in your words", "Results from the others while you're out"] },
   { id: "nova", role: "On your screen, one ⌃Space away", what: "Nova sees what's on your screen and drives the mouse, keyboard, apps and Terminal. It plans first, takes the dependable route, checks the result, and asks before anything it can't undo.", send: ["Anything to click, type or open on your Mac", "Tidying, renaming and moving files", "Downloading things into the right folder", "Reading what's on screen"] },
   { id: "orbit", role: "Speaks only when spoken to", what: "Talk to your Mac out loud. Orbit answers in a sentence or two, made for the ear, and passes anything it can't do by voice to the right member. Muted means silent, whatever happens.", send: ["Quick questions, hands free", "\"Remind me…\", \"What's next today?\"", "Starting work for the others, by voice"] },
   { id: "nebula", role: "Gestures, on your Mac", what: "Nebula reads your hand through the camera, only while you switch it on. Scroll, turn the volume like a knob, mute, and answer the Galaxy's questions with a thumbs up or down.", send: ["Hands-free control while you cook or present", "A thumbs up to approve, thumbs down to say no", "Pausing anything with an open palm"] },
@@ -98,11 +99,11 @@ function trials() {
 
 // --------------------------------------------------------------- how it works
 function diagram() {
-  const ids = ["nova", "orbit", "nebula", "zenith", "trainer", "medic"];
+  const ids = ["comet", "nova", "orbit", "nebula", "zenith", "trainer", "medic"];
   const C = 200, R = 140;
   const nodes = ids
     .map((id, i) => {
-      const a = (-60 + i * 60) * (Math.PI / 180); // nothing straight below Link, where its name goes
+      const a = (-90 + (i * 360) / ids.length) * (Math.PI / 180); // seven around: nothing straight below Link, where its name goes
       const x = C + R * Math.cos(a), y = C + R * Math.sin(a);
       const c = MEMBERS[id].color;
       return `<line x1="${C}" y1="${C}" x2="${x}" y2="${y}" stroke="${c}" stroke-opacity=".5" stroke-width="1.5" class="flow"/>
@@ -125,6 +126,7 @@ function diagram() {
 const DAY = [
   { t: "7:40 AM", id: "orbit", h: "\"What's on today?\"", p: "You ask out loud while making breakfast. Orbit answers in one sentence and stays quiet after." },
   { t: "11:15 AM", id: "nova", h: "Screenshots, sorted", p: "\"Tidy my desktop.\" Nova uses Terminal to move 34 screenshots into a dated folder, checks the count, and leaves your other files alone." },
+  { t: "3:20 PM", id: "comet", h: "From the bus", p: "\"Make my lemonade stand a website.\" Comet asks which email to show, builds it, and texts you the live link before you're home." },
   { t: "4:00 PM", id: "zenith", h: "A website, by tonight", p: "\"Make my team a website.\" Zenith plans it, builds it, runs it, and asks once before buying a domain." },
   { t: "1:00 AM", id: "trainer", h: "Practice while you sleep", p: "The Trainer drills each member on its weak spots. Medic restarts anything that fell over. By morning everyone's a bit sharper." },
 ];
@@ -135,6 +137,7 @@ function day() {
 
 // ---------------------------------------------------------------------- faq
 const FAQ = [
+  ["Can I text my Galaxy?", "Yes. Comet lives in iMessage, so you can text it from your phone anywhere. It only messages people you've let in, and never shares your details with anyone who asks."],
   ["What do I need?", "A Mac running macOS 14 or newer, and your own Claude account (Pro or Max) for the members that think. Nova and Nebula can also use your own Anthropic key."],
   ["Does Galaxy see everything on my screen?", "Nova only looks at your screen when you ask it to do something, and Nebula only uses the camera while you've switched it on. Nothing is recorded in the background."],
   ["Where do my memories go?", "Into your own Galaxy account. Only you can see them, and they follow you to a new Mac when you sign in. Nobody else's Galaxy can see yours."],

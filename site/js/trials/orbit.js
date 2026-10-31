@@ -12,6 +12,7 @@ function reply(said) {
   if (/day|date/.test(s)) return `It's ${now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}.`;
   if (/weather|rain|cold|hot/.test(s)) return "I can't see the weather in this preview, but on your Mac I'd check it and tell you in a sentence.";
   if (/remind/.test(s)) return "Done. I'll put it on your screen when it's time, rather than saying it out loud.";
+  if (/\btext\b|message/.test(s)) return "That's one for Comet. It'll send it in your words and tell you when it's gone.";
   if (/screenshot|file|folder|open|screen|click/.test(s)) return "That's one for Nova. I've handed it over, and it'll show you on screen when it's done.";
   if (/website|build|research|plan/.test(s)) return "That's a mission, so it's going to Zenith. It'll bring back something finished.";
   if (/joke/.test(s)) return "Why did the Mac go to therapy? Too many unresolved windows.";

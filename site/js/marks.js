@@ -1,6 +1,7 @@
 // Every member's mark and colour, the same as in Galaxy Link.
 
 export const MEMBERS = {
+  comet: { name: "Comet", sense: "Text", color: "#d97706" },
   nova: { name: "Nova", sense: "Sight", color: "#6d4aff" },
   orbit: { name: "Orbit", sense: "Voice", color: "#dc2626" },
   nebula: { name: "Nebula", sense: "Touch", color: "#059669" },
@@ -12,6 +13,7 @@ export const MEMBERS = {
 };
 
 const GLYPHS = {
+  comet: `<circle cx="16.2" cy="7.8" r="3.4" fill="currentColor"/><path d="M13.6 10.4 4 20" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M12.6 7.6 6.2 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".45"/><path d="M16.4 11.6 10 18" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".45"/>`,
   nova: `<path d="M12 2.5c.55 5.4 3.05 7.9 8.5 9.5-5.45 1.6-7.95 4.1-8.5 9.5-.55-5.4-3.05-7.9-8.5-9.5 5.45-1.6 7.95-4.1 8.5-9.5Z" fill="currentColor"/>`,
   orbit: `<path d="M15.57 5.89A7.6 7.6 0 1 1 8.43 5.89" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/><circle cx="12" cy="5" r="2.2" fill="currentColor"/>`,
   nebula: `<circle cx="12" cy="16.4" r="2.4" fill="currentColor"/><path d="M7.4 13.2a6.2 6.2 0 0 1 9.2 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/><path d="M4.2 10.2a10.6 10.6 0 0 1 15.6 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" opacity=".55"/>`,
